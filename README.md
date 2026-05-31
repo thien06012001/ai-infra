@@ -65,9 +65,4 @@ to `~/.claude/skills/graphify` — the tools' own install dirs)..
 | `.githooks/` | Commit-message convention enforcement (`commit-msg`); inert `pre-push`. |
 | `knowledge/`, `daily/`, `reports/`, `docs/pkb-schema.md` | The PKB content surfaces + schema. |
 
-## What's intentionally NOT here
-- **No user-scope install.** Nothing writes to `~/.claude`; every setting is project-scoped.
-- **Stack-specific skills/hooks** (NestJS typecheck, drizzle, shadcn, vercel/next, secret-sync) are excluded. Stack plugins were dropped from `enabledPlugins` too.
-- **External tools** aren't vendored — `setup.sh` installs `graphify`/`rtk` to latest.
-
 See **[SETUP.md](SETUP.md)** for hook details and the hook-profile env vars.
