@@ -30,6 +30,28 @@ $PayloadPaths = @('CLAUDE.md','program.md','pyproject.toml','uv.lock','.mcp.json
 Write-Host "ai-infra installer ($Repo@$Ref -> $Target)" -ForegroundColor White
 Write-Host ""
 
+# ---------- 0. runtime prerequisite preflight (soft) ----------
+# node + jq are needed at RUNTIME — node for the .cjs Edit/Write guard hooks, jq
+# for the guardrail/statusline shell hooks — not for install itself. Warn with
+# install guidance but never block.
+Step "Checking runtime prerequisites (node, jq)"
+if (Get-Command node -ErrorAction SilentlyContinue) {
+  Ok "node $(node --version 2>$null)"
+} else {
+  Warn "node not found — the .cjs Edit/Write guard hooks won't run. Install it via:"
+  Write-Host "      * direct download:  https://nodejs.org/  (or: winget install OpenJS.NodeJS)"
+  Write-Host "      * version manager:  fnm -> https://github.com/Schniz/fnm   then: fnm install --lts"
+  Write-Host "                          nvm-windows -> https://github.com/coreybutler/nvm-windows"
+}
+if (Get-Command jq -ErrorAction SilentlyContinue) {
+  Ok "jq $(jq --version 2>$null)"
+} else {
+  Warn "jq not found — the guardrail/statusline shell hooks need it. Install it via:"
+  Write-Host "      * winget install jqlang.jq   (or: choco install jq)"
+  Write-Host "      * other:  https://jqlang.github.io/jq/download/"
+}
+Write-Host ""
+
 # ---------- 1. obtain payload ----------
 $Tmp = $null
 try {

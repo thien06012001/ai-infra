@@ -16,6 +16,19 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 command -v uv >/dev/null 2>&1 || { echo "❌ uv not found — install from https://docs.astral.sh/uv/ and re-run." >&2; exit 1; }
 
+# --- Runtime prerequisite preflight (soft) ---
+# node + jq are needed at runtime (node → .cjs guard hooks; jq → shell hooks),
+# not for setup itself — so warn with install options but don't block.
+if ! command -v node >/dev/null 2>&1; then
+  echo "⚠ node not found — the .cjs Edit/Write guard hooks won't run. Install it via:"
+  echo "    • direct download:  https://nodejs.org/  (or your OS package manager)"
+  echo "    • version manager:  nvm (https://github.com/nvm-sh/nvm) or fnm (https://github.com/Schniz/fnm), then 'nvm install --lts' / 'fnm install --lts'"
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "⚠ jq not found — the guardrail/statusline shell hooks need it. Install it via:"
+  echo "    • macOS: brew install jq   • Debian/Ubuntu: sudo apt install jq   • other: https://jqlang.github.io/jq/download/"
+fi
+
 # --- Project wiring ---
 echo "→ wiring git hooks + Python env"
 git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1 || git -C "$REPO_DIR" init -q
