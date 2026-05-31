@@ -41,6 +41,30 @@ PAYLOAD_PATHS=(CLAUDE.md program.md pyproject.toml uv.lock .mcp.json .gitignore
 say "${C_B}ai-infra installer${C_0}  ${C_D}($REPO@$REF → $TARGET)${C_0}"
 say ""
 
+# ---------- 0. runtime prerequisite preflight (soft) ----------
+# node + jq are needed at RUNTIME — node for the .cjs Edit/Write guard hooks, jq
+# for the guardrail/statusline shell hooks — not for install itself. So warn with
+# install guidance but never block. (uv/git/curl/tar are checked where they're
+# actually used, below.)
+step "Checking runtime prerequisites (node, jq)"
+if command -v node >/dev/null 2>&1; then
+  ok "node $(node --version 2>/dev/null)"
+else
+  warn "node not found — the .cjs Edit/Write guard hooks won't run. Install it via:"
+  say  "      • direct download:  https://nodejs.org/  (or your OS package manager)"
+  say  "      • version manager:  nvm → https://github.com/nvm-sh/nvm   then: nvm install --lts"
+  say  "                          fnm → https://github.com/Schniz/fnm   then: fnm install --lts"
+fi
+if command -v jq >/dev/null 2>&1; then
+  ok "jq $(jq --version 2>/dev/null)"
+else
+  warn "jq not found — the guardrail/statusline shell hooks need it. Install it via:"
+  say  "      • macOS:           brew install jq"
+  say  "      • Debian/Ubuntu:   sudo apt install jq"
+  say  "      • other:           https://jqlang.github.io/jq/download/"
+fi
+say ""
+
 # ---------- 1. obtain the payload ----------
 TMP=""
 cleanup() { [ -n "$TMP" ] && rm -rf "$TMP"; }
