@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Enforces commit message convention for this project.
+#
+# Format: [<TASK-ID>] <message content>
+# Example: [ABC-5] add user login form
+#
+# Exempt: merge commits, revert commits, fixup!/squash! commits, and the
+# initial commit (when HEAD does not yet exist).
+
+set -e
+
+msg_file="$1"
+first_line="$(head -n1 "$msg_file")"
+
+# Skip merge / revert / fixup / squash commits.
+case "$first_line" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"amend! "*)
+    exit 0
+    ;;
+esac
+
+pattern='^\[[A-Z]+-[0-9]+\] .+'
+
+if ! [[ "$first_line" =~ $pattern ]]; then
+  echo "ERROR: commit message does not match required pattern." >&2
+  echo "" >&2
+  echo "  Expected: [<TASK-ID>] <message content>" >&2
+  echo "  Example:  [ABC-5] add user login form" >&2
+  echo "" >&2
+  echo "Got:" >&2
+  echo "  $first_line" >&2
+  exit 1
+fi
+
+exit 0

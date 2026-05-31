@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Runs project-specific unit tests before pushing.
+#
+# Detects which projects have changed commits about to be pushed and
+# runs their unit test suites. Blocks the push if any tests fail.
+
+set -e
+
+remote="$1"
+url="$2"
+
+# Read the push info from stdin (local ref, local sha, remote ref, remote sha).
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Skip branch deletions.
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue
+  fi
+
+  # Determine the range of commits being pushed.
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    # New branch — compare against the merge base with main.
+    range="$(git merge-base HEAD main 2>/dev/null || echo "$local_sha")...$local_sha"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  changed_files="$(git diff --name-only "$range" 2>/dev/null || true)"
+
+  # --- Per-project test triggers (template) -------------------------------
+  # Uncomment and adapt one block per project that should run tests on push.
+  # Example:
+  #   if echo "$changed_files" | grep -q '^projects/myapp/'; then
+  #     echo "Running myapp unit tests…"
+  #     (cd projects/myapp && pnpm test) || {
+  #       echo "❌ myapp tests failed — push aborted." >&2
+  #       exit 1
+  #     }
+  #   fi
+  # ------------------------------------------------------------------------
+done
+
+exit 0

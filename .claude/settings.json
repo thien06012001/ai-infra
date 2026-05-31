@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "additionalDirectories": []
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "enabledPlugins": {
+    "skill-creator@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "chrome-devtools-mcp@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "agent-skills@addy-agent-skills": true
+  },
+  "extraKnownMarketplaces": {
+    "addy-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "addyosmani/agent-skills"
+      }
+    }
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/statusline.sh\""
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guardrail.sh\"" },
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-bash-guard.sh\"", "timeout": 5 },
+          { "type": "command", "command": "command -v rtk >/dev/null 2>&1 && rtk hook claude || cat", "timeout": 5 }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/hooks/block-env-edits.cjs\"", "timeout": 5, "statusMessage": "Checking .env write guard..." }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/hooks/block-stray-docs.cjs\"", "timeout": 5, "statusMessage": "Checking stray-docs guard..." }
+        ]
+      },
+      {
+        "matcher": "Glob|Grep",
+        "hooks": [
+          { "type": "command", "command": "[ -f \"$CLAUDE_PROJECT_DIR/graphify-out/graph.json\" ] && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md before searching raw files.\"}}' || true" }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/audit.sh\"", "timeout": 5 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/session-activity-tracker.py\"", "timeout": 5, "async": true }
+        ]
+      },
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-fetch-injection-scan.sh\"", "timeout": 5 }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      { "hooks": [ { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/worktree-create.py\"" } ] }
+    ],
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/cleanup-worktrees.py\"", "async": true } ] },
+      { "matcher": "", "hooks": [ { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/session-start.py\"", "timeout": 15 } ] }
+    ],
+    "PreCompact": [
+      { "matcher": "", "hooks": [ { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/pre-compact.py\"", "timeout": 10 } ] }
+    ],
+    "SessionEnd": [
+      { "matcher": "", "hooks": [ { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/session-end.py\"", "timeout": 10 } ] }
+    ],
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [ { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/kb-auto-inject.py\"", "timeout": 5 } ] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/notify.sh\" --kind Done" } ] }
+    ],
+    "Notification": [
+      { "matcher": "permission_prompt|idle_prompt", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/notify.sh\" --kind Input" } ] }
+    ]
+  }
+}
