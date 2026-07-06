@@ -37,6 +37,37 @@ chmod +x "$REPO_DIR/.githooks/"* 2>/dev/null || true
 uv --directory "$REPO_DIR" sync || echo "⚠ uv sync failed — run it manually in $REPO_DIR"
 uv run --directory "$REPO_DIR" python scripts/index.py || echo "⚠ index build failed — run scripts/index.py manually"
 
+# --- Claude plugins declared in settings.json ---
+# settings.json only DECLARES plugins: enabledPlugins toggles them on and
+# extraKnownMarketplaces names their sources. Neither key fetches code — Claude
+# Code loads a plugin only once it is installed under ~/.claude/plugins via the
+# `claude` CLI, so we reconcile the declaration into real installs here: register
+# each marketplace (official + any extras), then install every enabled plugin at
+# project scope. This is the one bit of Claude *plugin* state that lives in
+# ~/.claude/plugins — the plugins' own install dir — analogous to the external
+# CLI tools below; project settings.json still owns the enable/config.
+SETTINGS="$REPO_DIR/.claude/settings.json"
+if command -v claude >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && [ -f "$SETTINGS" ]; then
+  echo "→ claude plugins: installing the plugins declared in settings.json"
+  {
+    printf '%s\n' 'anthropics/claude-plugins-official'
+    jq -r '(.extraKnownMarketplaces // {}) | to_entries[] | select(.value.source.source=="github") | .value.source.repo' "$SETTINGS"
+  } | while IFS= read -r repo; do
+    [ -n "$repo" ] || continue
+    claude plugin marketplace add "$repo" >/dev/null 2>&1 || true
+  done
+  jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value==true) | .key' "$SETTINGS" | while IFS= read -r plugin; do
+    [ -n "$plugin" ] || continue
+    if ( cd "$REPO_DIR" && claude plugin install "$plugin" --scope project >/dev/null 2>&1 ); then
+      echo "    ✓ $plugin"
+    else
+      echo "    ⚠ $plugin (retry: claude plugin install $plugin --scope project)"
+    fi
+  done
+else
+  echo "⚠ claude CLI or jq not found — plugins in settings.json NOT installed. Run: claude plugin install <name>@<marketplace> --scope project"
+fi
+
 # --- External CLI tools (latest, never vendored) ---
 echo "→ graphify: installing/upgrading via uv tool"
 uv tool upgrade graphifyy 2>/dev/null || uv tool install graphifyy
