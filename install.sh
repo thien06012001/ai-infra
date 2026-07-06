@@ -13,6 +13,7 @@
 #   AI_INFRA_REF=<branch>                 git ref to install (default: main)
 #   AI_INFRA_SRC=<dir>                    install from a local payload dir (skip download)
 #   AI_INFRA_SKIP_TOOLS=1                 skip the graphify/rtk install (CI/testing)
+#   AI_INFRA_SKIP_PREREQS=1               skip auto-installing prerequisites (git, jq, node, uv)
 set -uo pipefail
 
 REPO="thien06012001/ai-infra"
@@ -41,27 +42,98 @@ PAYLOAD_PATHS=(CLAUDE.md program.md pyproject.toml uv.lock .mcp.json .gitignore
 say "${C_B}ai-infra installer${C_0}  ${C_D}($REPO@$REF → $TARGET)${C_0}"
 say ""
 
-# ---------- 0. runtime prerequisite preflight (soft) ----------
-# node + jq are needed at RUNTIME — node for the .cjs Edit/Write guard hooks, jq
-# for the guardrail/statusline shell hooks — not for install itself. So warn with
-# install guidance but never block. (uv/git/curl/tar are checked where they're
-# actually used, below.)
-step "Checking runtime prerequisites (node, jq)"
-if command -v node >/dev/null 2>&1; then
-  ok "node $(node --version 2>/dev/null)"
+# ---------- 0. prerequisite preflight (auto-install when missing) ----------
+# git, jq, node and uv are load-bearing for a full install: git wires the
+# hooksPath, jq drives the guardrail/statusline shell hooks, node runs the .cjs
+# Edit/Write guard hooks (and npx launches the context7 MCP server), and uv syncs
+# the env + installs graphify. When one is missing we try to install it — system
+# packages (git, jq, node) through whatever OS package manager is present, and uv
+# through its official installer. Disable all auto-install with
+# AI_INFRA_SKIP_PREREQS=1.
+
+# sudo prefix for system package managers — empty when already root or when sudo
+# is unavailable. Homebrew must never run under sudo, so pkg_install skips it there.
+SUDO=""
+if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
+
+# detect_pkg_mgr — print the first supported OS package manager found on PATH,
+# or fail. Ordered brew-first so macOS Homebrew wins in a mixed environment.
+detect_pkg_mgr() {
+  local m
+  for m in brew apt-get dnf yum pacman apk zypper; do
+    command -v "$m" >/dev/null 2>&1 && { printf '%s' "$m"; return 0; }
+  done
+  return 1
+}
+
+# pkg_install <pkg> <mgr> — install one already-resolved package (see
+# pkg_name_for) with the given manager. brew runs unprivileged; the rest are
+# prefixed with $SUDO. Uses ';' (not '&&') after apt-get update so a failed index
+# refresh still attempts the install from cache; the branch's exit status is the
+# install itself.
+pkg_install() {
+  case "$2" in
+    brew)    brew install "$1" ;;
+    apt-get) $SUDO apt-get update -qq; $SUDO apt-get install -y "$1" ;;
+    dnf)     $SUDO dnf install -y "$1" ;;
+    yum)     $SUDO yum install -y "$1" ;;
+    pacman)  $SUDO pacman -Sy --noconfirm "$1" ;;
+    apk)     $SUDO apk add "$1" ;;
+    zypper)  $SUDO zypper install -y "$1" ;;
+    *)       return 1 ;;
+  esac
+}
+
+# pkg_name_for <cmd> <mgr> — resolve the OS package that provides <cmd>. Most
+# tools share their command name across managers; node is the exception — it
+# ships as 'node' on Homebrew but 'nodejs' on Linux, and on the managers that
+# split npm/npx into their own package (apt/pacman/apk) we install 'npm' instead,
+# which depends on the runtime and so pulls node + npx in together.
+pkg_name_for() {
+  case "$1" in
+    node)
+      case "$2" in
+        brew)               printf 'node' ;;
+        apt-get|pacman|apk) printf 'npm' ;;
+        *)                  printf 'nodejs' ;;
+      esac ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# ensure_pkg <cmd> <name> — install the system package providing <cmd> only when
+# it is absent. No-op (with a version line) when already present.
+ensure_pkg() {
+  local mgr pkg
+  if command -v "$1" >/dev/null 2>&1; then ok "$2 $("$1" --version 2>/dev/null | head -n1)"; return 0; fi
+  if ! mgr="$(detect_pkg_mgr)"; then warn "$2 missing and no known package manager found — install it manually"; return 1; fi
+  pkg="$(pkg_name_for "$1" "$mgr")"
+  step "Installing $2 via $mgr"
+  if pkg_install "$pkg" "$mgr" >/dev/null 2>&1 && command -v "$1" >/dev/null 2>&1; then ok "$2 installed"; else err "$2 install failed — install it manually"; return 1; fi
+}
+
+# ensure_uv — install uv via its official installer (astral.sh) when absent, then
+# prepend its bin dir to PATH for the rest of this run so the wiring/tools steps
+# below can see it without a shell restart (default install target ~/.local/bin).
+ensure_uv() {
+  if command -v uv >/dev/null 2>&1; then ok "uv $(uv --version 2>/dev/null)"; return 0; fi
+  command -v curl >/dev/null 2>&1 || { warn "uv missing and curl unavailable — install from https://docs.astral.sh/uv/"; return 1; }
+  step "Installing uv (astral.sh official installer)"
+  curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 || true
+  local d
+  for d in "$HOME/.local/bin" "$HOME/.cargo/bin"; do [ -x "$d/uv" ] && PATH="$d:$PATH"; done
+  export PATH
+  if command -v uv >/dev/null 2>&1; then ok "uv installed"; else err "uv install failed — install from https://docs.astral.sh/uv/"; return 1; fi
+}
+
+if [ "${AI_INFRA_SKIP_PREREQS:-0}" = 1 ]; then
+  step "Skipping prerequisite auto-install (AI_INFRA_SKIP_PREREQS=1)"
 else
-  warn "node not found — the .cjs Edit/Write guard hooks won't run. Install it via:"
-  say  "      • direct download:  https://nodejs.org/  (or your OS package manager)"
-  say  "      • version manager:  nvm → https://github.com/nvm-sh/nvm   then: nvm install --lts"
-  say  "                          fnm → https://github.com/Schniz/fnm   then: fnm install --lts"
-fi
-if command -v jq >/dev/null 2>&1; then
-  ok "jq $(jq --version 2>/dev/null)"
-else
-  warn "jq not found — the guardrail/statusline shell hooks need it. Install it via:"
-  say  "      • macOS:           brew install jq"
-  say  "      • Debian/Ubuntu:   sudo apt install jq"
-  say  "      • other:           https://jqlang.github.io/jq/download/"
+  step "Checking prerequisites (git, jq, node, uv)"
+  ensure_pkg git  git
+  ensure_pkg jq   jq
+  ensure_pkg node node
+  ensure_uv
 fi
 say ""
 
