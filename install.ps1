@@ -7,7 +7,8 @@
 # what was installed, overwritten, appended, skipped, or failed.
 #
 # Env overrides: $env:AI_INFRA_TARGET, $env:AI_INFRA_MODE (override|append|skip),
-#   $env:AI_INFRA_REF, $env:AI_INFRA_SRC (local payload dir), $env:AI_INFRA_SKIP_TOOLS=1
+#   $env:AI_INFRA_REF, $env:AI_INFRA_SRC (local payload dir), $env:AI_INFRA_SKIP_TOOLS=1,
+#   $env:AI_INFRA_SKIP_PREREQS=1 (skip auto-installing git, jq, node, uv)
 $ErrorActionPreference = 'Stop'
 
 $Repo   = 'thien06012001/ai-infra'
@@ -30,25 +31,77 @@ $PayloadPaths = @('CLAUDE.md','program.md','pyproject.toml','uv.lock','.mcp.json
 Write-Host "ai-infra installer ($Repo@$Ref -> $Target)" -ForegroundColor White
 Write-Host ""
 
-# ---------- 0. runtime prerequisite preflight (soft) ----------
-# node + jq are needed at RUNTIME — node for the .cjs Edit/Write guard hooks, jq
-# for the guardrail/statusline shell hooks — not for install itself. Warn with
-# install guidance but never block.
-Step "Checking runtime prerequisites (node, jq)"
-if (Get-Command node -ErrorAction SilentlyContinue) {
-  Ok "node $(node --version 2>$null)"
-} else {
-  Warn "node not found — the .cjs Edit/Write guard hooks won't run. Install it via:"
-  Write-Host "      * direct download:  https://nodejs.org/  (or: winget install OpenJS.NodeJS)"
-  Write-Host "      * version manager:  fnm -> https://github.com/Schniz/fnm   then: fnm install --lts"
-  Write-Host "                          nvm-windows -> https://github.com/coreybutler/nvm-windows"
+# ---------- 0. prerequisite preflight (auto-install when missing) ----------
+# git, jq, node and uv are load-bearing for a full install: git wires the
+# hooksPath, jq drives the guardrail/statusline shell hooks, node runs the .cjs
+# Edit/Write guard hooks (and npx launches the context7 MCP server), and uv syncs
+# the env + installs graphify. When one is missing we install it — git/jq/node
+# through a detected Windows package manager (winget/scoop/choco), and uv through
+# its official installer. Disable all auto-install with $env:AI_INFRA_SKIP_PREREQS=1.
+
+# Detect-PkgMgr — return the first supported Windows package manager on PATH, or
+# $null. winget ships with modern Windows, so it is preferred over scoop/choco.
+function Detect-PkgMgr {
+  foreach ($m in @('winget','scoop','choco')) {
+    if (Get-Command $m -ErrorAction SilentlyContinue) { return $m }
+  }
+  return $null
 }
-if (Get-Command jq -ErrorAction SilentlyContinue) {
-  Ok "jq $(jq --version 2>$null)"
+
+# Pkg-Name — resolve the package id that provides <cmd> for the given manager.
+# Ids differ per manager (winget uses reverse-DNS ids; scoop/choco use short
+# names), so each tool is mapped explicitly rather than assuming id == command.
+function Pkg-Name($cmd, $mgr) {
+  switch ($cmd) {
+    'git'  { switch ($mgr) { 'winget' { 'Git.Git' }      default { 'git' } } }
+    'jq'   { switch ($mgr) { 'winget' { 'jqlang.jq' }     default { 'jq' } } }
+    'node' { switch ($mgr) { 'winget' { 'OpenJS.NodeJS' } 'scoop' { 'nodejs-lts' } default { 'nodejs' } } }
+    default { $cmd }
+  }
+}
+
+# Pkg-Install — install one package id with the given manager, non-interactively.
+function Pkg-Install($id, $mgr) {
+  switch ($mgr) {
+    'winget' { winget install --id $id -e --silent --accept-source-agreements --accept-package-agreements 2>$null | Out-Null }
+    'scoop'  { scoop install $id 2>$null | Out-Null }
+    'choco'  { choco install $id -y 2>$null | Out-Null }
+  }
+}
+
+# Ensure-Pkg — install the package providing <cmd> only when it is absent. After
+# an install it refreshes this session's PATH from the machine + user scopes so a
+# freshly installed tool is visible to the wiring/tools steps below.
+function Ensure-Pkg($cmd, $name) {
+  if (Get-Command $cmd -ErrorAction SilentlyContinue) { Ok "$name $(& $cmd --version 2>$null | Select-Object -First 1)"; return }
+  $mgr = Detect-PkgMgr
+  if (-not $mgr) { Warn "$name missing and no package manager (winget/scoop/choco) found — install it manually"; return }
+  Step "Installing $name via $mgr"
+  try { Pkg-Install (Pkg-Name $cmd $mgr) $mgr } catch {}
+  $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+  if (Get-Command $cmd -ErrorAction SilentlyContinue) { Ok "$name installed" } else { Err "$name install failed — install it manually" }
+}
+
+# Ensure-Uv — install uv via its official installer when absent, then add its bin
+# dir to this session's PATH (default target %USERPROFILE%\.local\bin) so the
+# wiring/tools steps can see it without a shell restart.
+function Ensure-Uv {
+  if (Get-Command uv -ErrorAction SilentlyContinue) { Ok "uv $(uv --version 2>$null)"; return }
+  Step "Installing uv (astral.sh official installer)"
+  try { powershell -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex" 2>$null | Out-Null } catch {}
+  $uvbin = Join-Path $env:USERPROFILE '.local\bin'
+  if (Test-Path (Join-Path $uvbin 'uv.exe')) { $env:Path = "$uvbin;$env:Path" }
+  if (Get-Command uv -ErrorAction SilentlyContinue) { Ok "uv installed" } else { Err "uv install failed — install from https://docs.astral.sh/uv/" }
+}
+
+if ($env:AI_INFRA_SKIP_PREREQS -eq '1') {
+  Step "Skipping prerequisite auto-install (AI_INFRA_SKIP_PREREQS=1)"
 } else {
-  Warn "jq not found — the guardrail/statusline shell hooks need it. Install it via:"
-  Write-Host "      * winget install jqlang.jq   (or: choco install jq)"
-  Write-Host "      * other:  https://jqlang.github.io/jq/download/"
+  Step "Checking prerequisites (git, jq, node, uv)"
+  Ensure-Pkg 'git'  'git'
+  Ensure-Pkg 'jq'   'jq'
+  Ensure-Pkg 'node' 'node'
+  Ensure-Uv
 }
 Write-Host ""
 

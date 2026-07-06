@@ -8,7 +8,10 @@ while ai-infra is the open project in Claude Code. Setup never touches `~/.claud
 or any global state, so it can't clash with your existing environment.
 
 ## Prerequisites
-Install these first — every later step assumes they are on your `PATH`:
+Install these first — every later step assumes they are on your `PATH`. (The
+[one-liner installer](#fast-path-one-liner) auto-installs all four — `git`, `jq`,
+Node and `uv` — for you via your OS package manager, so this table is mainly for
+the manual path.)
 
 | Tool | Why it's needed | Install |
 | --- | --- | --- |
@@ -36,9 +39,12 @@ curl -fsSL https://raw.githubusercontent.com/thien06012001/ai-infra/main/install
 irm https://raw.githubusercontent.com/thien06012001/ai-infra/main/install.ps1 | iex
 ```
 
-The installer copies the infra into the current directory, wires it (`git`
-hooksPath, `uv sync`, knowledge index), installs the external CLIs (`graphify`,
-`rtk`), and prints a full report. If you'd rather understand and run each step
+The installer auto-installs any missing prerequisites (`git`, `jq`, Node and `uv`
+— via your OS package manager, `winget`/`scoop`/`choco` on Windows, and uv's
+official installer), copies the infra into the current directory, wires it
+(`git` hooksPath, `uv sync`, knowledge index), installs the external CLIs
+(`graphify`, `rtk`), and prints a full report. Set `AI_INFRA_SKIP_PREREQS=1` to
+opt out of the auto-install. If you'd rather understand and run each step
 yourself, follow the **step-by-step** guide below — it does exactly what the
 one-liner does, one command at a time.
 
@@ -175,7 +181,7 @@ handle them (or set `AI_INFRA_MODE` to answer up front):
 - **skip** — keep every existing file as-is; only add what's missing
 
 Env knobs: `AI_INFRA_MODE=override|append|skip`, `AI_INFRA_TARGET=<dir>`,
-`AI_INFRA_REF=<branch>`, `AI_INFRA_SKIP_TOOLS=1`.
+`AI_INFRA_REF=<branch>`, `AI_INFRA_SKIP_TOOLS=1`, `AI_INFRA_SKIP_PREREQS=1`.
 
 ---
 
