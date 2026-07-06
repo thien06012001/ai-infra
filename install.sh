@@ -13,6 +13,7 @@
 #   AI_INFRA_REF=<branch>                 git ref to install (default: main)
 #   AI_INFRA_SRC=<dir>                    install from a local payload dir (skip download)
 #   AI_INFRA_SKIP_TOOLS=1                 skip the graphify/rtk install (CI/testing)
+#   AI_INFRA_SKIP_PLUGINS=1               skip installing the declared Claude plugins (CI/testing)
 #   AI_INFRA_SKIP_PREREQS=1               skip auto-installing prerequisites (git, jq, node, uv)
 set -uo pipefail
 
@@ -243,6 +244,46 @@ fi
 for w in "${WIRE_OK[@]:-}";   do [ -n "$w" ] && ok "$w"; done
 for w in "${WIRE_FAIL[@]:-}"; do [ -n "$w" ] && warn "$w"; done
 
+# ---------- 5b. install the declared Claude plugins ----------
+# The installed .claude/settings.json only DECLARES plugins: `enabledPlugins`
+# toggles them on and `extraKnownMarketplaces` names where they come from. Neither
+# key fetches anything — Claude Code loads a plugin only after its code is actually
+# installed under ~/.claude/plugins via the `claude` CLI. Without this step the
+# plugins show up as "enabled in project settings but isn't installed" and never
+# load. So we reconcile the declaration into real installs: register each
+# marketplace, then install every enabled plugin at project scope (matching how
+# settings.json enables them per-project). Skipped with a warning when the claude
+# CLI or jq is missing, or when AI_INFRA_SKIP_PLUGINS=1.
+PLUGINS_OK=(); PLUGINS_FAIL=()
+SETTINGS="$TARGET/.claude/settings.json"
+if [ "${AI_INFRA_SKIP_PLUGINS:-0}" = 1 ]; then
+  step "Skipping Claude plugin install (AI_INFRA_SKIP_PLUGINS=1)"
+elif ! command -v claude >/dev/null 2>&1; then
+  warn "claude CLI not found — plugins declared in settings.json were NOT installed. In the project run: claude plugin install <name>@<marketplace> --scope project"
+elif ! command -v jq >/dev/null 2>&1 || [ ! -f "$SETTINGS" ]; then
+  warn "jq or settings.json missing — skipped plugin install"
+else
+  step "Installing Claude plugins declared in settings.json"
+  # 1) register every marketplace the plugins resolve against (idempotent). The
+  #    official marketplace is added explicitly because plugins reference it but it
+  #    is not listed in extraKnownMarketplaces; the extras come from settings.json.
+  {
+    printf '%s\n' 'anthropics/claude-plugins-official'
+    jq -r '(.extraKnownMarketplaces // {}) | to_entries[] | select(.value.source.source=="github") | .value.source.repo' "$SETTINGS"
+  } | while IFS= read -r repo; do
+    [ -n "$repo" ] || continue
+    claude plugin marketplace add "$repo" >/dev/null 2>&1 || true
+  done
+  # 2) install each enabled plugin at project scope, run from inside TARGET so the
+  #    install attaches to this project (claude plugin uses the working directory).
+  while IFS= read -r plugin; do
+    [ -n "$plugin" ] || continue
+    if ( cd "$TARGET" && claude plugin install "$plugin" --scope project >/dev/null 2>&1 ); then PLUGINS_OK+=("$plugin"); else PLUGINS_FAIL+=("$plugin"); fi
+  done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value==true) | .key' "$SETTINGS")
+  for p in "${PLUGINS_OK[@]:-}";   do [ -n "$p" ] && ok "$p"; done
+  for p in "${PLUGINS_FAIL[@]:-}"; do [ -n "$p" ] && err "plugin failed: $p (retry: claude plugin install $p --scope project)"; done
+fi
+
 # ---------- 6. external tools ----------
 if [ "${AI_INFRA_SKIP_TOOLS:-0}" = 1 ]; then
   step "Skipping external tools (AI_INFRA_SKIP_TOOLS=1)"
@@ -280,6 +321,8 @@ printf '  skipped:    %s\n' "$(n "${SKIPPED[@]:-}")"
 [ "$(n "${KEPT[@]:-}")" -gt 0 ] && printf '  kept(*):    %s   %s(not text-appendable; left untouched)%s\n' "$(n "${KEPT[@]:-}")" "$C_D" "$C_0"
 say ""
 say "  ${C_B}tools:${C_0}"; list "${TOOLS_OK[@]:-}"; [ "$(n "${TOOLS_FAIL[@]:-}")" -gt 0 ] && { say "  ${C_R}tools failed:${C_0}"; list "${TOOLS_FAIL[@]:-}"; }
+[ "$(n "${PLUGINS_OK[@]:-}")" -gt 0 ] && { say "  ${C_B}plugins installed:${C_0}"; list "${PLUGINS_OK[@]:-}"; }
+[ "$(n "${PLUGINS_FAIL[@]:-}")" -gt 0 ] && { say "  ${C_R}plugins failed:${C_0}"; list "${PLUGINS_FAIL[@]:-}"; }
 [ "$(n "${WIRE_FAIL[@]:-}")" -gt 0 ] && { say "  ${C_Y}wiring warnings:${C_0}"; list "${WIRE_FAIL[@]:-}"; }
 
 FAILN="$(n "${FAILED[@]:-}")"

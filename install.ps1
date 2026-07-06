@@ -8,6 +8,7 @@
 #
 # Env overrides: $env:AI_INFRA_TARGET, $env:AI_INFRA_MODE (override|append|skip),
 #   $env:AI_INFRA_REF, $env:AI_INFRA_SRC (local payload dir), $env:AI_INFRA_SKIP_TOOLS=1,
+#   $env:AI_INFRA_SKIP_PLUGINS=1 (skip installing the declared Claude plugins),
 #   $env:AI_INFRA_SKIP_PREREQS=1 (skip auto-installing git, jq, node, uv)
 $ErrorActionPreference = 'Stop'
 
@@ -197,6 +198,51 @@ try {
   $WireOk   | ForEach-Object { Ok $_ }
   $WireFail | ForEach-Object { Warn $_ }
 
+  # ---------- 5b. install the declared Claude plugins ----------
+  # settings.json only DECLARES plugins: enabledPlugins toggles them on and
+  # extraKnownMarketplaces names their sources. Neither key fetches code — Claude
+  # Code loads a plugin only after it is installed under ~/.claude/plugins via the
+  # `claude` CLI, so without this step the plugins report as "enabled in project
+  # settings but isn't installed" and never load. We reconcile the declaration into
+  # real installs: register each marketplace, then install every enabled plugin at
+  # project scope (matching how settings.json enables them per-project). Uses
+  # PowerShell's native JSON parser (no jq needed on Windows). Skipped with a
+  # warning when the claude CLI is missing or $env:AI_INFRA_SKIP_PLUGINS=1.
+  $PluginsOk = @(); $PluginsFail = @()
+  $Settings = Join-Path $Target '.claude/settings.json'
+  if ($env:AI_INFRA_SKIP_PLUGINS -eq '1') {
+    Step "Skipping Claude plugin install (AI_INFRA_SKIP_PLUGINS=1)"
+  } elseif (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+    Warn "claude CLI not found — plugins declared in settings.json were NOT installed. In the project run: claude plugin install <name>@<marketplace> --scope project"
+  } elseif (-not (Test-Path $Settings)) {
+    Warn "settings.json missing — skipped plugin install"
+  } else {
+    Step "Installing Claude plugins declared in settings.json"
+    $cfg = Get-Content $Settings -Raw | ConvertFrom-Json
+    # 1) register marketplaces (official explicitly + extras from settings), idempotent
+    $repos = @('anthropics/claude-plugins-official')
+    if ($cfg.extraKnownMarketplaces) {
+      foreach ($m in $cfg.extraKnownMarketplaces.PSObject.Properties) {
+        if ($m.Value.source.source -eq 'github' -and $m.Value.source.repo) { $repos += $m.Value.source.repo }
+      }
+    }
+    foreach ($repo in $repos) { claude plugin marketplace add $repo 2>$null | Out-Null }
+    # 2) install each enabled plugin at project scope, from within Target so the
+    #    install attaches to this project (claude plugin uses the working dir).
+    if ($cfg.enabledPlugins) {
+      Push-Location $Target
+      try {
+        foreach ($p in $cfg.enabledPlugins.PSObject.Properties) {
+          if ($p.Value -ne $true) { continue }
+          claude plugin install $p.Name --scope project 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { $PluginsOk += $p.Name } else { $PluginsFail += $p.Name }
+        }
+      } finally { Pop-Location }
+    }
+    $PluginsOk   | ForEach-Object { Ok $_ }
+    $PluginsFail | ForEach-Object { Err "plugin failed: $_ (retry: claude plugin install $_ --scope project)" }
+  }
+
   # ---------- 6. external tools ----------
   if ($env:AI_INFRA_SKIP_TOOLS -eq '1') {
     Step "Skipping external tools (AI_INFRA_SKIP_TOOLS=1)"
@@ -234,6 +280,8 @@ try {
   Write-Host ""
   Write-Host "  tools:" -ForegroundColor White; $ToolsOk | ForEach-Object { Write-Host "      $_" }
   if ($ToolsFail.Count -gt 0) { Write-Host "  tools failed:" -ForegroundColor Red; $ToolsFail | ForEach-Object { Write-Host "      $_" } }
+  if ($PluginsOk.Count -gt 0)   { Write-Host "  plugins installed:" -ForegroundColor White; $PluginsOk | ForEach-Object { Write-Host "      $_" } }
+  if ($PluginsFail.Count -gt 0) { Write-Host "  plugins failed:" -ForegroundColor Red; $PluginsFail | ForEach-Object { Write-Host "      $_" } }
   if ($WireFail.Count -gt 0)  { Write-Host "  wiring warnings:" -ForegroundColor Yellow; $WireFail | ForEach-Object { Write-Host "      $_" } }
 
   if ($Failed.Count -gt 0) {

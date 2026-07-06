@@ -135,13 +135,23 @@ Open this directory as your project in Claude Code. On the first session,
 Nothing here is written into your global `~/.claude` *settings*.
 
 ### Step 7 — Install / verify the plugins
-The plugins are declared in `.claude/settings.json` (`enabledPlugins`) and their
-sources in `extraKnownMarketplaces`. Claude Code reads these when the project
-opens and **fetches each plugin's code from its marketplace on first use** — no
-plugin code is vendored in this repo.
+`.claude/settings.json` only **declares** the plugins: `enabledPlugins` toggles
+them on and `extraKnownMarketplaces` names where they come from. Those keys do
+**not** fetch anything — Claude Code loads a plugin only after its code is actually
+installed under `~/.claude/plugins`. (Opening the project does not auto-fetch them;
+an enabled-but-not-installed plugin just reports *"enabled in project settings but
+isn't installed"*.) So the installers reconcile the declaration into real installs
+for you: `install.sh` / `install.ps1` / `setup.sh` run, per enabled plugin,
+
+    claude plugin marketplace add <repo>                       # register the source
+    claude plugin install <name>@<marketplace> --scope project # fetch the code
+
+No plugin code is vendored in this repo; the CLI fetches it at install time. Skip
+this step with `AI_INFRA_SKIP_PLUGINS=1` (CI/testing).
 
 Two marketplaces are involved:
-- `claude-plugins-official` — built into Claude Code.
+- `claude-plugins-official` — Anthropic's official marketplace
+  (`anthropics/claude-plugins-official`), added automatically.
 - `addy-agent-skills` — added by this repo via `extraKnownMarketplaces`
   (source: `addyosmani/agent-skills`).
 
@@ -149,9 +159,10 @@ Enabled plugins: `skill-creator`, `claude-md-management`, `claude-code-setup`,
 `security-guidance`, `frontend-design`, `feature-dev`, `chrome-devtools-mcp`,
 `superpowers`, `context7`, and `agent-skills`.
 
-Run `/plugin` in Claude Code to confirm they're installed and enabled. If a
-plugin shows as not yet fetched, trigger it once (or use the `/plugin` menu) and
-Claude Code will pull it from the marketplace.
+Run `/plugin` in Claude Code to confirm each is **installed and enabled**. If any
+still shows *"enabled in project settings but isn't installed"*, the reconcile step
+was skipped (no `claude` CLI on PATH at install time, or `AI_INFRA_SKIP_PLUGINS=1`)
+— install it manually: `claude plugin install <name>@<marketplace> --scope project`.
 
 ### Step 8 — Confirm the MCP server
 `.mcp.json` registers the **context7** MCP server (launched with `npx`, so Node

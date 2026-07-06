@@ -22,8 +22,12 @@ repo — never globally:
   tracker, worktree create/cleanup.
 - **Stop / Notification**: `notify.sh` desktop notifications.
 - **statusLine**: `statusline.sh`.
-- **enabledPlugins / extraKnownMarketplaces**: enabled per-project; Claude fetches
-  plugin code from its marketplace on first use (no plugin code vendored here).
+- **enabledPlugins / extraKnownMarketplaces**: *declare* the plugins per-project but
+  do **not** fetch them — Claude Code loads a plugin only once its code is installed
+  under `~/.claude/plugins`. `setup.sh` / `install.sh` reconcile the declaration by
+  running `claude plugin marketplace add` + `claude plugin install … --scope project`
+  for each enabled plugin (no plugin code vendored here; skip with
+  `AI_INFRA_SKIP_PLUGINS=1`).
 
 ## External tools (installed by `setup.sh`)
 `graphify` and `rtk` release their own updates, so `setup.sh` **installs them to
