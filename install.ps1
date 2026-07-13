@@ -9,7 +9,8 @@
 # Env overrides: $env:AI_INFRA_TARGET, $env:AI_INFRA_MODE (override|append|skip),
 #   $env:AI_INFRA_REF, $env:AI_INFRA_SRC (local payload dir), $env:AI_INFRA_SKIP_TOOLS=1,
 #   $env:AI_INFRA_SKIP_PLUGINS=1 (skip installing the declared Claude plugins),
-#   $env:AI_INFRA_SKIP_PREREQS=1 (skip auto-installing git, jq, node, uv)
+#   $env:AI_INFRA_SKIP_PREREQS=1 (skip auto-installing git, jq, node, uv),
+#   $env:PLANNOTATOR_VERSION=<vX.Y.Z> (pinned plannotator binary release; default v0.22.0)
 $ErrorActionPreference = 'Stop'
 
 $Repo   = 'thien06012001/ai-infra'
@@ -241,6 +242,52 @@ try {
     }
     $PluginsOk   | ForEach-Object { Ok $_ }
     $PluginsFail | ForEach-Object { Err "plugin failed: $_ (retry: claude plugin install $_ --scope project)" }
+  }
+
+  # ---------- 5c. install the plannotator binary the plugin calls ----------
+  # The plannotator plugin only wires hooks that invoke a bare `plannotator` on PATH
+  # (ExitPlanMode / EnterPlanMode); it does NOT ship the executable. When that plugin
+  # is enabled we fetch the pinned, SIGNED release .exe from GitHub Releases and
+  # verify its SHA256 sidecar before installing to %USERPROFILE%\.local\bin (no
+  # install on mismatch). This avoids the upstream `irm … | iex` installer. Pin with
+  # $env:PLANNOTATOR_VERSION; shares the $env:AI_INFRA_SKIP_PLUGINS gate.
+  $PlannotatorVersion = if ($env:PLANNOTATOR_VERSION) { $env:PLANNOTATOR_VERSION } else { 'v0.22.0' }
+  $planEnabled = $false
+  if ((Test-Path $Settings) -and $env:AI_INFRA_SKIP_PLUGINS -ne '1') {
+    try { $planEnabled = [bool]((Get-Content $Settings -Raw | ConvertFrom-Json).enabledPlugins.'plannotator@plannotator') } catch { $planEnabled = $false }
+  }
+  if ($planEnabled) {
+    Step "Installing plannotator binary ($PlannotatorVersion, SHA256-verified)"
+    $arch = switch ($env:PROCESSOR_ARCHITECTURE) { 'AMD64' { 'x64' } 'ARM64' { 'arm64' } default { $null } }
+    if (-not $arch) {
+      Warn "plannotator binary: unsupported arch $env:PROCESSOR_ARCHITECTURE — install manually from github.com/backnotprop/plannotator/releases"
+    } else {
+      $asset = "plannotator-win32-$arch.exe"
+      $base  = "https://github.com/backnotprop/plannotator/releases/download/$PlannotatorVersion"
+      $dest  = Join-Path $env:USERPROFILE '.local\bin'
+      New-Item -ItemType Directory -Force -Path $dest | Out-Null
+      $tmpf = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N') + '.exe')
+      $tmps = "$tmpf.sha256"
+      try {
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset"        -OutFile $tmpf
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset.sha256" -OutFile $tmps
+        $want = ((Get-Content $tmps -Raw).Trim() -split '\s+')[0]
+        $got  = (Get-FileHash -Algorithm SHA256 $tmpf).Hash
+        if ($want -and ($want.ToLower() -eq $got.ToLower())) {
+          if (Get-Command gh -ErrorAction SilentlyContinue) { try { gh attestation verify $tmpf --repo backnotprop/plannotator 2>$null | Out-Null } catch {} }
+          Move-Item -Force $tmpf (Join-Path $dest 'plannotator.exe')
+          $ToolsOk += "plannotator $PlannotatorVersion -> $dest\plannotator.exe"
+          if (($env:Path -split ';') -notcontains $dest) { Warn "$dest is not on PATH — add it so the plannotator plugin hooks resolve the binary" }
+        } else {
+          $ToolsFail += "plannotator binary — SHA256 mismatch, NOT installed"
+        }
+      } catch {
+        $ToolsFail += "plannotator binary ($PlannotatorVersion) — download/install failed"
+      } finally {
+        Remove-Item $tmps -ErrorAction SilentlyContinue
+        if (Test-Path $tmpf) { Remove-Item $tmpf -ErrorAction SilentlyContinue }
+      }
+    }
   }
 
   # ---------- 6. external tools ----------

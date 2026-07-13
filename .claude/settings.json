@@ -14,7 +14,8 @@
     "chrome-devtools-mcp@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
-    "agent-skills@addy-agent-skills": true
+    "agent-skills@addy-agent-skills": true,
+    "plannotator@plannotator": true
   },
   "extraKnownMarketplaces": {
     "addy-agent-skills": {
@@ -22,7 +23,16 @@
         "source": "github",
         "repo": "addyosmani/agent-skills"
       }
+    },
+    "plannotator": {
+      "source": {
+        "source": "github",
+        "repo": "backnotprop/plannotator"
+      }
     }
+  },
+  "env": {
+    "PLANNOTATOR_JINA": "0"
   },
   "statusLine": {
     "type": "command",
