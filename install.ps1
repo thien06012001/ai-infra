@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/thien06012001/ai-infra/main/install.ps1 | iex
 #
 # Installs the ai-infra Claude setup + Personal Knowledge Base into the CURRENT
-# directory, then installs the external CLI tools (graphify, rtk). Reports exactly
+# directory, then installs the external CLI tools (graphify, codegraph, rtk). Reports exactly
 # what was installed, overwritten, appended, skipped, or failed.
 #
 # Env overrides: $env:AI_INFRA_TARGET, $env:AI_INFRA_MODE (override|append|skip),
@@ -294,7 +294,7 @@ try {
   if ($env:AI_INFRA_SKIP_TOOLS -eq '1') {
     Step "Skipping external tools (AI_INFRA_SKIP_TOOLS=1)"
   } else {
-    Step "Installing external tools (graphify, rtk)"
+    Step "Installing external tools (graphify, codegraph, rtk)"
     if (Get-Command uv -ErrorAction SilentlyContinue) {
       uv tool upgrade graphifyy 2>$null | Out-Null
       if ($LASTEXITCODE -ne 0) { uv tool install graphifyy 2>$null | Out-Null }
@@ -306,6 +306,20 @@ try {
         }
       } else { $ToolsFail += "graphify (uv tool)" }
     } else { $ToolsFail += "graphify — uv not found" }
+    # codegraph: symbol-level code index (third KB layer — see docs/pkb-schema.md).
+    # npm-only and exact-pinned on purpose: the published manifest declares no install
+    # scripts, unlike the advertised `irm … | iex` path. Telemetry ships ON by default,
+    # so disable it as part of the install rather than trusting a follow-up step.
+    $CodegraphVersion = if ($env:CODEGRAPH_VERSION) { $env:CODEGRAPH_VERSION } else { '1.4.1' }
+    if (Get-Command npm -ErrorAction SilentlyContinue) {
+      npm i -g "@colbymchenry/codegraph@$CodegraphVersion" 2>$null | Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        $ToolsOk += "codegraph v$CodegraphVersion (npm, pinned)"
+        codegraph telemetry off 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { $ToolsOk += "codegraph telemetry off" }
+        else { $ToolsFail += "codegraph telemetry STILL ON — run 'codegraph telemetry off'" }
+      } else { $ToolsFail += "codegraph (npm)" }
+    } else { $ToolsFail += "codegraph — npm not found" }
     # rtk ships a POSIX installer; run it via a shell if one is available (Git Bash / WSL).
     $sh = Get-Command sh -ErrorAction SilentlyContinue
     if ($sh) {
