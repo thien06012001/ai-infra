@@ -80,6 +80,8 @@ The three layers differ in what a **node** is — a concept, a cluster, and a sy
 
 **Known limits of the code index:** static analysis only (no dynamic dispatch, reflection, or DI wiring); files > 1 MB are skipped; a 2s staleness window follows each edit; on WSL2, repos on `/mnt/` Windows mounts need `CODEGRAPH_NO_DAEMON=1`.
 
+**`codegraph impact` truncates by default — this one bites.** Its `--depth` defaults to `2`, and a truncated blast radius is indistinguishable from a complete one in the output. Verified on a 4-function, 2-file probe: `impact validate` reported 3 affected symbols and stopped inside the first file; `impact validate --depth 5` reported all 5, including the cross-file caller. Cross-file resolution itself works correctly — the default depth was the whole difference. Always pass an explicit `--depth` before acting on a blast radius, and state the depth you used.
+
 ## The Compiler Analogy
 
 ```

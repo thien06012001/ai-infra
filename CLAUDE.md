@@ -151,7 +151,11 @@ When you orient yourself, **check the knowledge base first** — it has three la
 - **Atlas (`graphify-out/`)** — *what is this corpus about, what clusters with what?* God nodes, communities, cross-community bridges, surprising connections. Start at `graphify-out/GRAPH_REPORT.md` if it exists.
 - **Code index (codegraph MCP)** — *what calls this symbol, what breaks if I change it?* Exact call paths and blast radius, via the `codegraph_explore` MCP tool. Only exists in repos where `codegraph init` has been run — **not** in `ai-infra` itself, which has no call graph worth indexing.
 
-Route by the question, not by habit: **why → narrative. Corpus shape → atlas. Symbol precision → code index.** The code index is static analysis — it cannot see dynamic dispatch, reflection, or DI-container wiring, so "no callers" is a strong hint, never proof.
+Route by the question, not by habit: **why → narrative. Corpus shape → atlas. Symbol precision → code index.**
+
+Two ways the code index will mislead you if you trust it naively:
+- **It is static analysis.** It cannot see dynamic dispatch, reflection, or DI-container wiring, so "no callers" is a strong hint, never proof.
+- **`codegraph impact` defaults to depth 2 and silently truncates.** A blast radius that stops at depth 2 *looks* complete. Pass `--depth 5` (or higher) before reporting what a change breaks, and say which depth you used.
 
 Only search externally when no layer has the answer.
 
