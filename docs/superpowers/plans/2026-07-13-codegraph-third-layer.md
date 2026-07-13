@@ -127,9 +127,11 @@ CODEGRAPH_VERSION="${CODEGRAPH_VERSION:-1.4.1}"
 echo "→ codegraph: installing v${CODEGRAPH_VERSION} via npm (pinned)"
 if command -v npm >/dev/null 2>&1; then
   if npm i -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}" >/dev/null 2>&1; then
-    codegraph telemetry off >/dev/null 2>&1 \
-      || echo "    ⚠ codegraph: could not disable telemetry — run 'codegraph telemetry off' manually"
-    echo "    ✓ codegraph v${CODEGRAPH_VERSION} (telemetry off)"
+    if codegraph telemetry off >/dev/null 2>&1; then
+      echo "    ✓ codegraph v${CODEGRAPH_VERSION} (telemetry off)"
+    else
+      echo "    ⚠ codegraph v${CODEGRAPH_VERSION} installed, but telemetry is STILL ON — run 'codegraph telemetry off' manually"
+    fi
   else
     echo "    ⚠ codegraph: npm install failed — install manually: npm i -g @colbymchenry/codegraph@${CODEGRAPH_VERSION}"
   fi
@@ -140,7 +142,7 @@ fi
 # codegraph's own README documents unreliable local-socket comms on WSL2 Windows-drive
 # mounts. We never auto-init a repo, but warn early so a /mnt/ clone doesn't silently
 # produce a broken index the first time someone runs `codegraph init`.
-case "$(pwd)" in
+case "$REPO_DIR" in
   /mnt/*) echo "    ⚠ codegraph: this repo is on a Windows mount (/mnt) — 'codegraph init' needs CODEGRAPH_NO_DAEMON=1 here, or move the repo to the Linux filesystem" ;;
 esac
 ```
