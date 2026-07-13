@@ -15,6 +15,7 @@
 #   AI_INFRA_SKIP_TOOLS=1                 skip the graphify/rtk install (CI/testing)
 #   AI_INFRA_SKIP_PLUGINS=1               skip installing the declared Claude plugins (CI/testing)
 #   AI_INFRA_SKIP_PREREQS=1               skip auto-installing prerequisites (git, jq, node, uv)
+#   PLANNOTATOR_VERSION=<vX.Y.Z>          pinned plannotator binary release (default: v0.22.0)
 set -uo pipefail
 
 REPO="thien06012001/ai-infra"
@@ -282,6 +283,71 @@ else
   done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value==true) | .key' "$SETTINGS")
   for p in "${PLUGINS_OK[@]:-}";   do [ -n "$p" ] && ok "$p"; done
   for p in "${PLUGINS_FAIL[@]:-}"; do [ -n "$p" ] && err "plugin failed: $p (retry: claude plugin install $p --scope project)"; done
+fi
+
+# ---------- 5c. install the plannotator binary the plugin calls ----------
+# The plannotator plugin (when enabled in settings.json) only wires hooks that
+# invoke a bare `plannotator` on PATH (ExitPlanMode / EnterPlanMode) — it does NOT
+# ship the executable. So when that plugin is enabled we fetch the pinned, SIGNED
+# release binary from GitHub Releases and verify its SHA256 sidecar before
+# installing it to ~/.local/bin (hard-fail with NO install on any checksum
+# mismatch). This deliberately avoids the upstream `curl … | bash` installer. Pin
+# via PLANNOTATOR_VERSION; the whole step shares the AI_INFRA_SKIP_PLUGINS=1 gate.
+PLANNOTATOR_VERSION="${PLANNOTATOR_VERSION:-v0.22.0}"
+
+# plannotator_enabled <settings.json> — true when the plannotator plugin is toggled
+# on in settings.json (needs jq). Guards the whole binary-install step below.
+plannotator_enabled() {
+  command -v jq >/dev/null 2>&1 && [ -f "$1" ] &&
+    [ "$(jq -r '(.enabledPlugins // {})["plannotator@plannotator"] // false' "$1")" = true ]
+}
+
+# install_plannotator_bin — download + verify + install the plannotator binary for
+# the current OS/arch. Exit codes: 0 installed, 1 download/io failure, 2 unsupported
+# platform (skip quietly; Windows is handled by install.ps1), 3 SHA256 mismatch.
+install_plannotator_bin() {
+  local os arch asset base dest tmpf tmps want got
+  case "$(uname -s)" in
+    Linux)  os=linux ;;
+    Darwin) os=darwin ;;
+    *)      return 2 ;;
+  esac
+  case "$(uname -m)" in
+    x86_64|amd64)  arch=x64 ;;
+    arm64|aarch64) arch=arm64 ;;
+    *)             return 2 ;;
+  esac
+  command -v curl >/dev/null 2>&1 || return 1
+  asset="plannotator-${os}-${arch}"
+  base="https://github.com/backnotprop/plannotator/releases/download/${PLANNOTATOR_VERSION}"
+  dest="$HOME/.local/bin"
+  mkdir -p "$dest" || return 1
+  tmpf="$(mktemp)"; tmps="$(mktemp)"
+  curl -fsSL "$base/$asset"        -o "$tmpf" || { rm -f "$tmpf" "$tmps"; return 1; }
+  curl -fsSL "$base/$asset.sha256" -o "$tmps" || { rm -f "$tmpf" "$tmps"; return 1; }
+  want="$(awk '{print $1}' "$tmps" 2>/dev/null)"
+  got="$( { sha256sum "$tmpf" 2>/dev/null || shasum -a 256 "$tmpf" 2>/dev/null; } | awk '{print $1}')" || got=""
+  { [ -n "$want" ] && [ "$want" = "$got" ]; } || { rm -f "$tmpf" "$tmps"; return 3; }
+  # best-effort SLSA provenance check when gh is present; never blocks on it
+  command -v gh >/dev/null 2>&1 && gh attestation verify "$tmpf" --repo backnotprop/plannotator >/dev/null 2>&1 || true
+  chmod +x "$tmpf"
+  mv "$tmpf" "$dest/plannotator" || { rm -f "$tmpf" "$tmps"; return 1; }
+  rm -f "$tmps"
+}
+
+if [ "${AI_INFRA_SKIP_PLUGINS:-0}" != 1 ] && plannotator_enabled "$SETTINGS"; then
+  step "Installing plannotator binary ($PLANNOTATOR_VERSION, SHA256-verified)"
+  rc=0; install_plannotator_bin || rc=$?
+  case "$rc" in
+    0) TOOLS_OK+=("plannotator $PLANNOTATOR_VERSION → ~/.local/bin/plannotator")
+       case ":$PATH:" in
+         *":$HOME/.local/bin:"*) : ;;
+         *) warn "~/.local/bin not on PATH — add it so the plannotator plugin hooks resolve the binary" ;;
+       esac ;;
+    2) warn "plannotator binary: unsupported platform ($(uname -s)/$(uname -m)) — install manually from github.com/backnotprop/plannotator/releases" ;;
+    3) TOOLS_FAIL+=("plannotator binary — SHA256 mismatch, NOT installed") ;;
+    *) TOOLS_FAIL+=("plannotator binary ($PLANNOTATOR_VERSION) — download/install failed") ;;
+  esac
 fi
 
 # ---------- 6. external tools ----------
