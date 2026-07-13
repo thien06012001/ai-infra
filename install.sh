@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/thien06012001/ai-infra/main/install.sh | bash
 #
 # Installs the ai-infra Claude setup + Personal Knowledge Base into the CURRENT
-# directory, then installs the external CLI tools (graphify, rtk). Reports exactly
+# directory, then installs the external CLI tools (graphify, codegraph, rtk). Reports exactly
 # what was installed, overwritten, appended, skipped, or failed.
 #
 # Env overrides:
@@ -12,7 +12,8 @@
 #   AI_INFRA_MODE=override|append|skip    conflict handling (default: ask, else override)
 #   AI_INFRA_REF=<branch>                 git ref to install (default: main)
 #   AI_INFRA_SRC=<dir>                    install from a local payload dir (skip download)
-#   AI_INFRA_SKIP_TOOLS=1                 skip the graphify/rtk install (CI/testing)
+#   AI_INFRA_SKIP_TOOLS=1                 skip the graphify/codegraph/rtk install (CI/testing)
+#   CODEGRAPH_VERSION=<ver>               override the pinned codegraph version (default: 1.4.1)
 #   AI_INFRA_SKIP_PLUGINS=1               skip installing the declared Claude plugins (CI/testing)
 #   AI_INFRA_SKIP_PREREQS=1               skip auto-installing prerequisites (git, jq, node, uv)
 #   PLANNOTATOR_VERSION=<vX.Y.Z>          pinned plannotator binary release (default: v0.22.0)
@@ -372,8 +373,13 @@ else
   # rather than left to the user to remember.
   CODEGRAPH_VERSION="${CODEGRAPH_VERSION:-1.4.1}"
   if command -v npm >/dev/null 2>&1; then
-    if npm i -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}" >/dev/null 2>&1; then
+    if npm i -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}" --silent --no-fund --no-audit >/dev/null 2>&1; then
       TOOLS_OK+=("codegraph v${CODEGRAPH_VERSION} (npm, pinned)")
+      # codegraph's local-socket comms are unreliable on WSL2 Windows-drive mounts. This
+      # installer is the likeliest of the three to land on /mnt/c, so warn where it lands.
+      case "$TARGET" in
+        /mnt/*) TOOLS_FAIL+=("codegraph: target is on a Windows mount (/mnt) — 'codegraph init' needs CODEGRAPH_NO_DAEMON=1 here, or move the repo to the Linux filesystem") ;;
+      esac
       if codegraph telemetry off >/dev/null 2>&1; then
         TOOLS_OK+=("codegraph telemetry off")
       else

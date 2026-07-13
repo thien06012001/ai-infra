@@ -711,5 +711,5 @@ git commit -m "[AII-5] kb: node type determines whether tools are substitutes or
 
 **Known unverified assumptions**, all gated behind a check rather than assumed:
 - The telemetry subcommand — Task 0 Step 3 confirms it before use.
-- The MCP subcommand (`codegraph mcp`) — Task 4 Step 2 confirms it before commit.
+- The MCP subcommand — **RESOLVED in Task 0, and the original guess was wrong.** There is no `codegraph mcp`; the correct invocation is the hidden `codegraph serve --mcp`. Verified live: the server completes an MCP `initialize` handshake as `codegraph 1.4.1` and exposes `codegraph_explore`.
 - The CLI verbs `callers` / `impact` / `status` — Task 6 will surface it immediately if they differ.

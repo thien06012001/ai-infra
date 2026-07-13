@@ -312,12 +312,21 @@ try {
     # so disable it as part of the install rather than trusting a follow-up step.
     $CodegraphVersion = if ($env:CODEGRAPH_VERSION) { $env:CODEGRAPH_VERSION } else { '1.4.1' }
     if (Get-Command npm -ErrorAction SilentlyContinue) {
-      npm i -g "@colbymchenry/codegraph@$CodegraphVersion" 2>$null | Out-Null
+      npm i -g "@colbymchenry/codegraph@$CodegraphVersion" --silent --no-fund --no-audit 2>$null | Out-Null
       if ($LASTEXITCODE -eq 0) {
         $ToolsOk += "codegraph v$CodegraphVersion (npm, pinned)"
-        codegraph telemetry off 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) { $ToolsOk += "codegraph telemetry off" }
-        else { $ToolsFail += "codegraph telemetry STILL ON — run 'codegraph telemetry off'" }
+        # Guard the call: npm's global bin dir is written to the machine PATH, but this
+        # already-running process may not have it in $env:Path yet. Without the guard an
+        # unresolvable command is a TERMINATING error under $ErrorActionPreference='Stop',
+        # which would abort the whole installer (there is no catch) — so rtk would never
+        # install and the summary would never print. Record the failure instead.
+        if (Get-Command codegraph -ErrorAction SilentlyContinue) {
+          codegraph telemetry off 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { $ToolsOk += "codegraph telemetry off" }
+          else { $ToolsFail += "codegraph telemetry STILL ON — run 'codegraph telemetry off'" }
+        } else {
+          $ToolsFail += "codegraph telemetry STILL ON — codegraph not on PATH yet; reopen the shell and run 'codegraph telemetry off'"
+        }
       } else { $ToolsFail += "codegraph (npm)" }
     } else { $ToolsFail += "codegraph — npm not found" }
     # rtk ships a POSIX installer; run it via a shell if one is available (Git Bash / WSL).

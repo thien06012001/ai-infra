@@ -4,7 +4,8 @@
 #   ./setup.sh
 #
 # Wires this repo (git hooksPath, uv env, KB index) AND installs/updates the
-# external CLI tools (graphify, rtk) to the latest version.
+# external CLI tools: graphify and rtk to the latest version, codegraph to a
+# pinned version (override with CODEGRAPH_VERSION, default 1.4.1).
 #
 # Claude config is 100% PROJECT-SCOPED: every hook/statusline/plugin lives in this
 # repo's .claude/ and is active only while ai-infra is the open project — setup
@@ -145,7 +146,7 @@ fi
 CODEGRAPH_VERSION="${CODEGRAPH_VERSION:-1.4.1}"
 echo "→ codegraph: installing v${CODEGRAPH_VERSION} via npm (pinned)"
 if command -v npm >/dev/null 2>&1; then
-  if npm i -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}" >/dev/null 2>&1; then
+  if npm i -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}" --silent --no-fund --no-audit >/dev/null 2>&1; then
     if codegraph telemetry off >/dev/null 2>&1; then
       echo "    ✓ codegraph v${CODEGRAPH_VERSION} (telemetry off)"
     else
