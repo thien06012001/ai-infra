@@ -40,6 +40,14 @@ Do not fabricate a test harness to satisfy the letter of TDD. Do not skip the fa
 **Interfaces:**
 - Produces: the confirmed exact strings `<INSTALL_CMD>` and `<TELEMETRY_OFF_CMD>` used verbatim by Tasks 1, 2, and 3.
 
+> **RESOLVED 2026-07-13 — Task 0 complete. Findings, confirmed against the installed binary:**
+>
+> - **Rule 13 re-check passes.** `npm view @colbymchenry/codegraph@1.4.1` → no `scripts` field at all; `license = MIT`; integrity hash present; `optionalDependencies` all exact-pinned to `1.4.1`. The spec's LOW-MEDIUM verdict stands.
+> - **`codegraph telemetry off` and `codegraph telemetry status` are correct** as written. Verified: status now reports `Telemetry: disabled (your saved choice)`, config at `~/.codegraph/telemetry.json`.
+> - **`codegraph init` / `status` / `callers` / `impact` are all real verbs** — Task 6 needs no change.
+> - **⚠ THE PLAN WAS WRONG ABOUT MCP.** There is **no `codegraph mcp` subcommand.** `codegraph mcp` silently falls through to printing top-level help, so an MCP client would have received help text instead of a stdio server — a silent failure. The real invocation is the *hidden* command **`codegraph serve --mcp`**, confirmed via `codegraph install --print-config claude`. **Task 4 Step 2 is corrected below.** Do not use `["mcp"]`.
+> - **We deliberately do NOT run `codegraph install`.** It writes to the *global* `~/.claude.json` and injects an auto-allow permissions list into Claude Code settings. We hand-write the project-scoped `.mcp.json` instead, so nothing outside this repo is mutated.
+
 - [ ] **Step 1: Confirm the version exists on the registry and has no install scripts**
 
 ```bash
@@ -386,20 +394,23 @@ Replace with:
       "args": ["-y", "@upstash/context7-mcp@2.1.7"]
     },
     "codegraph": {
+      "type": "stdio",
       "command": "codegraph",
-      "args": ["mcp"]
+      "args": ["serve", "--mcp"]
     }
   }
 }
 ```
 
-**Verify the subcommand before committing** — do not assume `mcp` is the right one:
+**Use exactly `["serve", "--mcp"]`.** This was confirmed in Task 0 via `codegraph install --print-config claude`, which is the tool telling you its own canonical config. There is **no `codegraph mcp` subcommand** — passing `["mcp"]` makes the binary print top-level help to stdout, which an MCP client cannot parse, and it fails *silently* rather than erroring. `serve` is a hidden command absent from `codegraph --help`; do not "correct" it back to something that appears in the help output.
+
+Re-confirm before committing:
 
 ```bash
-codegraph --help 2>&1 | grep -iE "mcp|serve|stdio"
+codegraph install --print-config claude
 ```
 
-If the MCP stdio server is launched by a different subcommand, use that string instead and note the correction here.
+Expected: a snippet whose `args` are exactly `["serve", "--mcp"]`. If it disagrees, the tool is authoritative — use what it prints and note the correction.
 
 - [ ] **Step 3: Add `.codegraph/` to `.gitignore`**
 
