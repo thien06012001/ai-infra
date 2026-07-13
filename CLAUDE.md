@@ -145,11 +145,19 @@ Default to surfacing uncertainty, not hiding it.
 
 This project is `ai-infra`. Read this section, then any local instructions, before making changes. If the request is ambiguous about scope, ask before acting.
 
-When you orient yourself, **check the knowledge base first** — it has two layers:
-- **Narrative (`knowledge/`)** for *why* questions: rationale, conventions, decisions. Start at `knowledge/index.md`.
-- **Atlas (`graphify-out/`)** for *structure* questions: god nodes, cross-community bridges, call graphs. Start at `graphify-out/GRAPH_REPORT.md` if it exists.
+When you orient yourself, **check the knowledge base first** — it has three layers, and each owns exactly one class of question:
 
-Only search externally when neither layer has the answer.
+- **Narrative (`knowledge/`)** — *why did we decide X?* Rationale, conventions, decisions. Start at `knowledge/index.md`.
+- **Atlas (`graphify-out/`)** — *what is this corpus about, what clusters with what?* God nodes, communities, cross-community bridges, surprising connections. Start at `graphify-out/GRAPH_REPORT.md` if it exists.
+- **Code index (codegraph MCP)** — *what calls this symbol, what breaks if I change it?* Exact call paths and blast radius, via the `codegraph_explore` MCP tool. Only exists in repos where `codegraph init` has been run — **not** in `ai-infra` itself, which has no call graph worth indexing.
+
+Route by the question, not by habit: **why → narrative. Corpus shape → atlas. Symbol precision → code index.**
+
+Two ways the code index will mislead you if you trust it naively:
+- **It is static analysis.** It cannot see dynamic dispatch, reflection, or DI-container wiring, so "no callers" is a strong hint, never proof.
+- **`codegraph impact` defaults to depth 2 and silently truncates.** A blast radius that stops at depth 2 *looks* complete. Pass `--depth 5` (or higher) before reporting what a change breaks, and say which depth you used.
+
+Only search externally when no layer has the answer.
 
 ## Conventions that apply across the project
 
@@ -168,7 +176,7 @@ Full rules, exemptions, examples, and the `pre-push` test trigger: [`.githooks/R
 
 # Personal Knowledge Base
 
-Two layers: **narrative** (`knowledge/`, hand-compiled from AI conversations) + **atlas** (`graphify-out/`, machine-extracted graph of the whole repo). Adapted from [Karpathy's LLM Knowledge Base](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) architecture.
+Three layers: **narrative** (`knowledge/`, hand-compiled from AI conversations) + **atlas** (`graphify-out/`, machine-extracted graph of the whole repo) + **code index** (`.codegraph/`, symbol-level call graph, per-project and only where there is real code). Adapted from [Karpathy's LLM Knowledge Base](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) architecture.
 
 The full schema — architecture, article formats, compile/query/lint operations, command + hook quick-reference tables, script details, costs, customization — lives in **[`docs/pkb-schema.md`](docs/pkb-schema.md)**. Read it when working on or with the KB.
 

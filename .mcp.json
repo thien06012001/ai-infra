@@ -3,6 +3,11 @@
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@2.1.7"]
+    },
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
     }
   }
 }

@@ -6,7 +6,7 @@
 ## Contents
 - [Quick Reference](#quick-reference) (commands + hooks at a glance)
 - [The Compiler Analogy](#the-compiler-analogy)
-- [Two-Layer Architecture](#two-layer-architecture) (narrative `knowledge/` + atlas `graphify-out/`)
+- [Three-Layer Architecture](#three-layer-architecture) (narrative `knowledge/` + atlas `graphify-out/` + code index `.codegraph/`)
 - [Architecture](#architecture) (Layer 1: daily/, Layer 2: knowledge/, Layer 3: schema reference)
 - [Structural Files](#structural-files) (index.md, log.md)
 - [Article Formats](#article-formats) (concepts, connections)
@@ -52,24 +52,35 @@ The auto-injection hook fires on every user prompt, runs BM25 over the KB, and p
 
 The PKB-specific hooks (session-start, session-end, pre-compact, cleanup-worktrees) are documented in detail under [Hook System](#hook-system-automatic-capture) below. The generic guards (block-env-edits, block-stray-docs) live as `.cjs` files in `hooks/` — read the source for details.
 
-## Two-Layer Architecture
+## Three-Layer Architecture
 
-The knowledge system is two complementary layers. They are combined at the index layer, not merged into one corpus.
+The knowledge system is three complementary layers. They are combined at the index layer, not merged into one corpus.
 
 | Layer | Location | Role | Produced by |
 |-------|----------|------|-------------|
 | **Narrative** | `knowledge/` | *Why did we do X?* — rationale, conventions, decisions | Hand-compiled from `daily/` via `compile.py` |
-| **Atlas** | `graphify-out/` | *What connects to what?* — god nodes, communities, cross-cutting edges | Machine-extracted (AST + semantic) via `/graphify` |
+| **Atlas** | `graphify-out/` | *What is this corpus about?* — god nodes, communities, cross-cutting edges | Machine-extracted (AST + semantic) via `/graphify` |
+| **Code index** | `.codegraph/` | *What calls this symbol? What breaks if I change it?* — call paths, blast radius | `codegraph init` + its file watcher (AST, $0, no LLM) |
+
+The three layers differ in what a **node** is — a concept, a cluster, and a symbol respectively. That is why none replaces another: a symbol-level call graph cannot answer "what is this corpus about," and a concept-level graph cannot tell you precisely what calls `ProcessOrder`.
 
 **Combined via cross-links, not duplication:**
 - `knowledge/index.md` carries an **Atlas** section at the top linking to `graphify-out/GRAPH_REPORT.md`, `graphify-out/graph.html`, and `graphify-out/graph.json`.
 - Graphify ingests every `knowledge/*.md` file as doc nodes, so the narrative appears inside the atlas automatically.
+- The code index is queried live over MCP (`codegraph_explore`); it produces no committed artifact. `.codegraph/` is gitignored.
 - No Q&A layer — `graphify save-result` saves query answers directly back into the graph.
 
-**When to use each** (short version):
-- Decision rationale, conventions, "why" questions → narrative
-- Structural lookups, god nodes, cross-community bridges, INFERRED-edge verification → atlas
-- Both together: when a narrative article explains *why* and the atlas shows *where* it applies
+**When to use each:**
+- Decision rationale, conventions, "why" questions → **narrative**
+- Corpus shape, god nodes, cross-community bridges, INFERRED-edge verification → **atlas**
+- "Who calls this?", "what is the blast radius of this change?" → **code index**
+- Together: a narrative article explains *why*, the atlas shows *where it applies*, the code index shows *exactly what it touches*
+
+**Scope of the code index:** it exists only in repos that contain real code. `ai-infra` itself is **not** indexed — 17 hook/script files with ~76 mostly-independent symbols yield a call graph that answers nothing. The template installs the binary globally; `codegraph init` runs per-project, on demand.
+
+**Known limits of the code index:** static analysis only (no dynamic dispatch, reflection, or DI wiring); files > 1 MB are skipped; a 2s staleness window follows each edit; on WSL2, repos on `/mnt/` Windows mounts need `CODEGRAPH_NO_DAEMON=1`.
+
+**`codegraph impact` truncates by default — this one bites.** Its `--depth` defaults to `2`, and a truncated blast radius is indistinguishable from a complete one in the output. Verified on a 4-function, 2-file probe: `impact validate` reported 3 affected symbols and stopped inside the first file; `impact validate --depth 5` reported all 5, including the cross-file caller. Cross-file resolution itself works correctly — the default depth was the whole difference. Always pass an explicit `--depth` before acting on a blast radius, and state the depth you used.
 
 ## The Compiler Analogy
 

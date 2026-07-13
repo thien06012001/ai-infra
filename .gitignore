@@ -40,5 +40,8 @@ run.log
 reports/.search-index.db
 reports/.search-index.db-*
 
+# codegraph symbol index — machine-local SQLite, rebuilt by `codegraph init` + its watcher.
+.codegraph/
+
 # Timestamped backups
 *.bak
