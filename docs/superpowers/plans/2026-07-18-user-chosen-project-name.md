@@ -63,6 +63,10 @@ git -C "$REPO_ROOT" ls-files -z \
   | tar --null -C "$REPO_ROOT" -T - -c -f - \
   | tar -x -C "$SRC"
 
+# ...except knowledge/ and daily/, which hold operator-local KB content in this
+# working tree that never ships from the published tarball.
+git -C "$REPO_ROOT" archive HEAD knowledge daily | tar -x -C "$SRC" --overwrite
+
 PASS=0; FAIL=0
 ok_()   { printf '  PASS  %s\n' "$1"; PASS=$((PASS+1)); }
 bad_()  { printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
@@ -94,7 +98,7 @@ refute "docs/superpowers/ is NOT installed"      test -d "$T/docs/superpowers"
 assert "docs/pkb-schema.md IS installed"          test -f "$T/docs/pkb-schema.md"
 
 # --- no unrendered placeholder escaped ---
-refute "no '{{' remains anywhere in the target"   grep -rq '{{' "$T"
+refute "no '{{' remains anywhere in the target"   grep -rqI --exclude-dir=.venv '{{' "$T"
 
 # --- the three templated files carry the project name, not the template's ---
 for f in CLAUDE.md pyproject.toml program.md; do
@@ -103,11 +107,14 @@ for f in CLAUDE.md pyproject.toml program.md; do
 done
 
 # --- residual ai-infra mentions are exactly the expected provenance set ---
-# hooks/_kb_edits.py keeps an internal temp-file namespace by design.
-# uv.lock still names the old root package until `uv sync` re-locks it.
+# hooks/_kb_edits.py keeps an internal temp-file namespace by design, and is the
+# only expected residual. uv.lock is NOT in this set: install.sh's own wiring step
+# runs `uv sync` before returning, regenerating the lock against the rendered
+# pyproject.toml. .venv/ and the binary search index exist by then too, hence -I
+# and --exclude-dir=.venv below.
 echo "-- files still containing 'ai-infra': --"
-( cd "$T" && grep -rl 'ai-infra' . 2>/dev/null | sed 's|^\./||' | sort | tee "$WORK/residual.txt" )
-printf 'hooks/_kb_edits.py\nuv.lock\n' | sort > "$WORK/expected.txt"
+( cd "$T" && grep -rlI --exclude-dir=.venv 'ai-infra' . 2>/dev/null | sed 's|^\./||' | sort | tee "$WORK/residual.txt" )
+printf 'hooks/_kb_edits.py\n' | sort > "$WORK/expected.txt"
 assert "residual ai-infra mentions match the expected set" \
   diff -q "$WORK/expected.txt" "$WORK/residual.txt"
 
@@ -365,7 +372,7 @@ Replace with (two lines — the second explains the token to anyone reading the 
 ```
 This project is `{{PROJECT_NAME}}`. Read this section, then any local instructions, before making changes. If the request is ambiguous about scope, ask before acting.
 
-> `{{PROJECT_NAME}}` is substituted with the real project name at install time. If you are reading this token unrendered, you are in the `ai-infra` template repo itself — read it as `ai-infra`.
+> `{{PROJECT_NAME}}` is substituted with the real project name at install time. If you are reading this token unrendered, you are in the upstream template repository itself, not an installed project.
 ```
 
 - [ ] **Step 2: Add the placeholder to `pyproject.toml`**
@@ -803,7 +810,7 @@ Expected: one match in each — the documented "defaults to the target directory
 
 Run: `./test-install.sh`
 
-Expected: exit 0, zero failures, and the residual-mentions listing shows exactly `hooks/_kb_edits.py` and `uv.lock`.
+Expected: exit 0, zero failures, and the residual-mentions listing shows exactly `hooks/_kb_edits.py`.
 
 - [ ] **Step 6: Commit**
 
