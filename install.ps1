@@ -213,7 +213,13 @@ try {
   # the system ANSI codepage on Windows PowerShell 5.1, which corrupts the
   # non-ASCII characters these payload files contain on non-Latin locales.
   $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-  function Get-Rendered($path){ [IO.File]::ReadAllText($path, $Utf8NoBom).Replace('{{PROJECT_NAME}}', $ProjectName) }
+  # Two tokens, not one: pyproject.toml's `name` field is PEP 508-validated and
+  # rejects braces, so uv refuses to parse a tree holding {{PROJECT_NAME}} there.
+  function Get-Rendered($path){
+    [IO.File]::ReadAllText($path, $Utf8NoBom).
+      Replace('{{PROJECT_NAME}}', $ProjectName).
+      Replace('project-name-placeholder', $ProjectName)
+  }
 
   # Copy-Payload — install one payload file, rendering it when templated.
   function Copy-Payload($s, $d, $rel) {

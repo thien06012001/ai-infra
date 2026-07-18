@@ -61,6 +61,7 @@ assert "docs/pkb-schema.md IS installed"          test -f "$T/docs/pkb-schema.md
 # dependency content, not installed payload, and a future dependency shipping a
 # template file would fail this assertion for a reason unrelated to the installer.
 refute "no '{{' remains anywhere in the target"   grep -rqI --exclude-dir=.venv '{{' "$T"
+refute "no 'project-name-placeholder' remains either"     grep -rqI --exclude-dir=.venv 'project-name-placeholder' "$T"
 
 # --- the three templated files carry the project name, not the template's ---
 for f in CLAUDE.md pyproject.toml program.md; do

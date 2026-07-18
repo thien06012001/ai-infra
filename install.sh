@@ -260,7 +260,11 @@ is_templated() { case "$1" in CLAUDE.md|pyproject.toml|program.md) return 0;; *)
 
 # render — write $1 to stdout with {{PROJECT_NAME}} resolved. $PROJECT_NAME is a
 # normalized slug ([a-z0-9-] only), so it needs no sed metacharacter escaping.
-render() { sed "s/{{PROJECT_NAME}}/$PROJECT_NAME/g" "$1"; }
+# Two tokens, not one: pyproject.toml's `name` field is PEP 508-validated and
+# rejects braces, so uv refuses to parse a tree holding {{PROJECT_NAME}} there.
+# The sentinel is a legal package name; a surviving one is loudly wrong.
+render() { sed -e "s/{{PROJECT_NAME}}/$PROJECT_NAME/g" \
+               -e "s/project-name-placeholder/$PROJECT_NAME/g" "$1"; }
 
 # place — install one payload file, rendering it when templated. Mirrors the
 # `cp -p` it replaces, including its exit status, so callers are unchanged.

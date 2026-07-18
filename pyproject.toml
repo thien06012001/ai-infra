@@ -1,5 +1,5 @@
 [project]
-name = "{{PROJECT_NAME}}"
+name = "project-name-placeholder"
 version = "0.1.0"
 description = "{{PROJECT_NAME}} — Claude harness + Personal Knowledge Base"
 requires-python = ">=3.12"
