@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ai-infra setup. Run once after cloning:
+# Project setup. Run once after cloning:
 #
 #   ./setup.sh
 #
@@ -8,7 +8,7 @@
 # pinned version (override with CODEGRAPH_VERSION, default 1.4.1).
 #
 # Claude config is 100% PROJECT-SCOPED: every hook/statusline/plugin lives in this
-# repo's .claude/ and is active only while ai-infra is the open project — setup
+# repo's .claude/ and is active only while this repo is the open project — setup
 # never writes Claude *settings* into ~/.claude. The external tools are the one
 # thing that installs to global locations (~/.local/bin, ~/.claude/skills/graphify
 # — the tools' own install dirs), because that is simply where these CLIs live.
@@ -171,7 +171,7 @@ curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/develop/install.sh | sh 
 
 cat <<EOF
 
-✅ ai-infra setup complete.
+✅ Setup complete.
 
   • Claude config is project-scoped (.claude/) — your ~/.claude *settings* are untouched.
   • Open this repo in Claude Code; .claude/settings.json wires every hook, the

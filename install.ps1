@@ -6,7 +6,8 @@
 # directory, then installs the external CLI tools (graphify, codegraph, rtk). Reports exactly
 # what was installed, overwritten, appended, skipped, or failed.
 #
-# Env overrides: $env:AI_INFRA_TARGET, $env:AI_INFRA_MODE (override|append|skip),
+# Env overrides: $env:AI_INFRA_NAME (project name; default: ask, else target dir name),
+#   $env:AI_INFRA_TARGET, $env:AI_INFRA_MODE (override|append|skip),
 #   $env:AI_INFRA_REF, $env:AI_INFRA_SRC (local payload dir), $env:AI_INFRA_SKIP_TOOLS=1,
 #   $env:AI_INFRA_SKIP_PLUGINS=1 (skip installing the declared Claude plugins),
 #   $env:AI_INFRA_SKIP_PREREQS=1 (skip auto-installing git, jq, node, uv),
@@ -16,6 +17,16 @@ $ErrorActionPreference = 'Stop'
 $Repo   = 'thien06012001/ai-infra'
 $Ref    = if ($env:AI_INFRA_REF)    { $env:AI_INFRA_REF }    else { 'main' }
 $Target = if ($env:AI_INFRA_TARGET) { $env:AI_INFRA_TARGET } else { (Get-Location).Path }
+# Cmdlets resolve relative paths against $PWD, but [IO.File] resolves against
+# [Environment]::CurrentDirectory, which PowerShell never syncs. Absolutize once
+# so both agree for the rest of the run. The IsPathRooted guard is load-bearing:
+# Join-Path does not detect an already-absolute second argument, so joining
+# unconditionally turns an absolute target into $PWD + target and installs the
+# whole payload into the wrong directory.
+if (-not [IO.Path]::IsPathRooted($Target)) {
+  $Target = Join-Path (Get-Location).ProviderPath $Target
+}
+$Target = [IO.Path]::GetFullPath($Target)
 $Mode   = $env:AI_INFRA_MODE
 
 function Step($m){ Write-Host "==> $m" -ForegroundColor Cyan }
@@ -26,11 +37,57 @@ function Err($m) { Write-Host "  x $m" -ForegroundColor Red }
 $Installed=@(); $Overwrote=@(); $Appended=@(); $Skipped=@(); $Kept=@(); $Failed=@()
 $ToolsOk=@(); $ToolsFail=@(); $WireOk=@(); $WireFail=@()
 
+# 'docs/pkb-schema.md' rather than all of 'docs': docs/superpowers/{specs,plans}
+# are design records about building this template, not documentation the
+# installed project needs.
 $PayloadPaths = @('CLAUDE.md','program.md','pyproject.toml','uv.lock','.mcp.json',
   '.gitignore','.gitattributes','setup.sh','.claude','hooks','scripts','.githooks',
-  'docs','knowledge','daily','reports')
+  'docs/pkb-schema.md','knowledge','daily','reports')
 
 Write-Host "ai-infra installer ($Repo@$Ref -> $Target)" -ForegroundColor White
+Write-Host ""
+
+# ---------- 0a. project name ----------
+# The payload carries the template's own identity in three files. Capture the
+# name the user wants this project to have and render it during the copy, so an
+# installed project never claims to be ai-infra.
+
+# Get-NormalizedName — fold an arbitrary human name into a PEP 508-safe slug.
+# Required, not cosmetic: pyproject.toml's `name` field rejects spaces and
+# uppercase, and a directory called "My App" is a legitimate install target.
+# Returns an empty string when no valid character survives.
+function Get-NormalizedName($raw) {
+  $s = $raw.ToLowerInvariant() -replace '[ _]', '-' -replace '[^a-z0-9-]', '' -replace '-{2,}', '-'
+  return $s.Trim('-')
+}
+
+$RawName = $env:AI_INFRA_NAME
+if (-not $RawName) {
+  $DefaultName = Split-Path $Target -Leaf
+  # Track whether we actually attempted the prompt: an interactive user who
+  # presses Enter to accept the default also lands in "-not $RawName" below,
+  # and that case must not be reported as "non-interactive".
+  $Prompted = $false
+  if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    $Prompted = $true
+    try { $RawName = Read-Host "Project name? [$DefaultName]" } catch { $RawName = $null }
+  }
+  if (-not $RawName) {
+    $RawName = $DefaultName
+    if (-not $Prompted) { Warn "non-interactive session — project name defaulted to '$RawName'" }
+  }
+}
+
+$ProjectName = Get-NormalizedName $RawName
+if (-not $ProjectName) {
+  Err "project name '$RawName' normalizes to empty — use letters, digits, or hyphens"
+  exit 1
+}
+if ($ProjectName -cne $RawName) {
+  Write-Host "  using project name: $ProjectName (from ""$RawName"")"
+} else {
+  Write-Host "  project name: $ProjectName"
+}
 Write-Host ""
 
 # ---------- 0. prerequisite preflight (auto-install when missing) ----------
@@ -114,6 +171,9 @@ try {
     $Src = $env:AI_INFRA_SRC
     Step "Using local payload: $Src"
     if (-not (Test-Path $Src -PathType Container)) { Err "AI_INFRA_SRC '$Src' is not a directory"; exit 1 }
+    # Same $PWD vs [Environment]::CurrentDirectory divergence as $Target above:
+    # absolutize now that we know the path exists, so [IO.File] calls below agree.
+    $Src = (Resolve-Path -LiteralPath $Src).ProviderPath
   } else {
     Step "Downloading ai-infra ($Ref)"
     $Tmp = Join-Path ([IO.Path]::GetTempPath()) ("ai-infra-" + [Guid]::NewGuid().ToString('N'))
@@ -160,20 +220,50 @@ try {
   $ts = Get-Date -Format 'yyyyMMdd-HHmmss'
   function Is-Text($rel){ $rel -match '\.(md|txt)$' -or $rel -match '(^|[\\/])\.gitignore$' -or $rel -match '(^|[\\/])\.gitattributes$' }
 
+  # Test-Templated — true for the three payload files carrying {{PROJECT_NAME}}.
+  # An explicit allowlist rather than a blanket pass: a global substitution would
+  # also rewrite the provenance mentions ("added by ai-infra") that must survive.
+  function Test-Templated($rel){ @('CLAUDE.md','pyproject.toml','program.md') -ccontains ($rel -replace '\\','/') }
+
+  # Get-Rendered — return the file's content with {{PROJECT_NAME}} resolved.
+  # Reads/writes via the .NET API with an explicit BOM-less UTF-8 encoder,
+  # rather than Get-Content/Set-Content: those cmdlets decode/re-encode using
+  # the system ANSI codepage on Windows PowerShell 5.1, which corrupts the
+  # non-ASCII characters these payload files contain on non-Latin locales.
+  $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  # Two tokens, not one: pyproject.toml's `name` field is PEP 508-validated and
+  # rejects braces, so uv refuses to parse a tree holding {{PROJECT_NAME}} there.
+  function Get-Rendered($path){
+    [IO.File]::ReadAllText($path, $Utf8NoBom).
+      Replace('{{PROJECT_NAME}}', $ProjectName).
+      Replace('project-name-placeholder', $ProjectName)
+  }
+
+  # Copy-Payload — install one payload file, rendering it when templated.
+  function Copy-Payload($s, $d, $rel) {
+    if (Test-Templated $rel) { [IO.File]::WriteAllText($d, (Get-Rendered $s), $Utf8NoBom) }
+    else { Copy-Item $s $d -Force }
+  }
+
   Step "Installing $($files.Count) file(s) into $Target"
   foreach ($rel in $files) {
     $s = Join-Path $Src $rel; $d = Join-Path $Target $rel
     try {
       if (-not (Test-Path $d)) {
         New-Item -ItemType Directory -Force -Path (Split-Path $d -Parent) | Out-Null
-        Copy-Item $s $d -Force; $Installed += $rel; continue
+        Copy-Payload $s $d $rel; $Installed += $rel; continue
       }
       switch ($Mode) {
-        'override' { Copy-Item $d "$d.$ts.bak" -Force; Copy-Item $s $d -Force; $Overwrote += $rel }
+        'override' { Copy-Item $d "$d.$ts.bak" -Force; Copy-Payload $s $d $rel; $Overwrote += $rel }
         'append'   {
           if (Is-Text $rel) {
             $sep = if ($rel -match '\.(gitignore|gitattributes)$') { "`n# --- added by ai-infra ---`n" } else { "`n<!-- added by ai-infra -->`n" }
-            Add-Content -Path $d -Value ($sep + (Get-Content $s -Raw)); $Appended += $rel
+            # Both read and write go through the .NET UTF-8 API here, not
+            # Get-Content/Add-Content: Add-Content encodes with the system ANSI
+            # codepage on Windows PowerShell 5.1, which silently mangles any
+            # non-Latin character (e.g. U+2192) that ReadAllText correctly decoded.
+            $body = if (Test-Templated $rel) { Get-Rendered $s } else { [IO.File]::ReadAllText($s, $Utf8NoBom) }
+            [IO.File]::AppendAllText($d, ($sep + $body), $Utf8NoBom); $Appended += $rel
           } else { $Kept += $rel }
         }
         'skip'     { $Skipped += $rel }

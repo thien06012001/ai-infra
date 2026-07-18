@@ -76,7 +76,7 @@ The three layers differ in what a **node** is — a concept, a cluster, and a sy
 - "Who calls this?", "what is the blast radius of this change?" → **code index**
 - Together: a narrative article explains *why*, the atlas shows *where it applies*, the code index shows *exactly what it touches*
 
-**Scope of the code index:** it exists only in repos that contain real code. `ai-infra` itself is **not** indexed — 17 hook/script files with ~76 mostly-independent symbols yield a call graph that answers nothing. The template installs the binary globally; `codegraph init` runs per-project, on demand.
+**Scope of the code index:** it exists only in repos that contain real code. A repo that is only hooks and scripts — a few dozen mostly-independent symbols — yields a call graph that answers nothing, so it is left unindexed. The installer places the binary globally; `codegraph init` runs per-project, on demand.
 
 **Known limits of the code index:** static analysis only (no dynamic dispatch, reflection, or DI wiring); files > 1 MB are skipped; a 2s staleness window follows each edit; on WSL2, repos on `/mnt/` Windows mounts need `CODEGRAPH_NO_DAEMON=1`.
 

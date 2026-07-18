@@ -1,4 +1,4 @@
-# ai-infra — infra-as-performance-loop
+# {{PROJECT_NAME}} — infra-as-performance-loop
 
 This is an optional experiment frame: have the LLM continuously improve the performance of this project's own supporting infrastructure — the hooks, the KB pipeline, the branch/commit conventions, and the scripts under `scripts/` and `hooks/`.
 

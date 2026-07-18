@@ -4,7 +4,7 @@ The knowledge base is **three layers**:
 
 - **Narrative layer (this file + `knowledge/`)** — hand-compiled editorial articles answering *"why did we do X?"*. Loaded into every session via `hooks/session-start.py`.
 - **Atlas layer (`graphify-out/`)** — machine-extracted structural + semantic graph answering *"what is this corpus about?"*. Rebuilt on demand via `/graphify` or incrementally via `graphify update .`.
-- **Code index (`.codegraph/`)** — symbol-level call graph answering *"what calls this, what breaks if I change it?"*, via the `codegraph_explore` MCP tool. Per-project and only where there is real code — **not** in `ai-infra` itself.
+- **Code index (`.codegraph/`)** — symbol-level call graph answering *"what calls this, what breaks if I change it?"*, via the `codegraph_explore` MCP tool. Per-project, and only where there is real application code to index.
 
 See [docs/pkb-schema.md](../docs/pkb-schema.md) for the full schema, the compile flow, and when to use each layer.
 

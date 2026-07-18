@@ -8,6 +8,7 @@
 # what was installed, overwritten, appended, skipped, or failed.
 #
 # Env overrides:
+#   AI_INFRA_NAME=<name>                  project name (default: ask, else target dir name)
 #   AI_INFRA_TARGET=<dir>                 install target (default: current dir)
 #   AI_INFRA_MODE=override|append|skip    conflict handling (default: ask, else override)
 #   AI_INFRA_REF=<branch>                 git ref to install (default: main)
@@ -39,10 +40,61 @@ TOOLS_OK=(); TOOLS_FAIL=(); WIRE_OK=(); WIRE_FAIL=()
 
 # Top-level paths that make up the infra payload (everything else in the repo —
 # README, SETUP, the installers, .git — is NOT installed into your project).
+# `docs/pkb-schema.md` rather than all of `docs`: docs/superpowers/{specs,plans}
+# are design records about building this template, not documentation the
+# installed project needs.
 PAYLOAD_PATHS=(CLAUDE.md program.md pyproject.toml uv.lock .mcp.json .gitignore
-  .gitattributes setup.sh .claude hooks scripts .githooks docs knowledge daily reports)
+  .gitattributes setup.sh .claude hooks scripts .githooks docs/pkb-schema.md
+  knowledge daily reports)
 
 say "${C_B}ai-infra installer${C_0}  ${C_D}($REPO@$REF → $TARGET)${C_0}"
+say ""
+
+# ---------- 0a. project name ----------
+# The payload carries the template's own identity in three files. Capture the
+# name the user wants this project to have and render it during the copy, so an
+# installed project never claims to be ai-infra. Prompting here rather than
+# later means the question is asked before the long download, not after it.
+
+# normalize_name — fold an arbitrary human name into a PEP 508-safe slug.
+# Required, not cosmetic: pyproject.toml's `name` field rejects spaces and
+# uppercase, and a directory called "My App" is a legitimate install target.
+# Prints the slug on stdout; prints nothing when no valid character survives.
+normalize_name() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr ' _' '--' \
+    | tr -cd 'a-z0-9-' \
+    | sed 's/--*/-/g; s/^-//; s/-$//'
+}
+
+RAW_NAME="${AI_INFRA_NAME:-}"
+if [ -z "$RAW_NAME" ]; then
+  DEFAULT_NAME="$(basename "$TARGET")"
+  # `[ -r /dev/tty ]` alone is not a TTY test: in a container or CI with no
+  # controlling terminal the node exists and passes -r, but opening it fails
+  # ENXIO — printing two raw bash errors and skipping the warn branch. Actually
+  # opening it is the only reliable check.
+  if [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+    printf 'Project name? [%s]: ' "$DEFAULT_NAME" > /dev/tty
+    read -r RAW_NAME < /dev/tty || RAW_NAME=""
+    [ -n "$RAW_NAME" ] || RAW_NAME="$DEFAULT_NAME"
+  else
+    RAW_NAME="$DEFAULT_NAME"
+    warn "no interactive terminal — project name defaulted to '$RAW_NAME'"
+  fi
+fi
+
+PROJECT_NAME="$(normalize_name "$RAW_NAME")"
+if [ -z "$PROJECT_NAME" ]; then
+  err "project name '$RAW_NAME' normalizes to empty — use letters, digits, or hyphens"
+  exit 1
+fi
+if [ "$PROJECT_NAME" != "$RAW_NAME" ]; then
+  say "  using project name: ${C_B}$PROJECT_NAME${C_0} (from \"$RAW_NAME\")"
+else
+  say "  project name: ${C_B}$PROJECT_NAME${C_0}"
+fi
 say ""
 
 # ---------- 0. prerequisite preflight (auto-install when missing) ----------
@@ -205,20 +257,39 @@ fi
 TS="$(date +%Y%m%d-%H%M%S)"
 is_text() { case "$1" in *.md|*.txt|*.gitignore|*.gitattributes|.gitignore|.gitattributes) return 0;; *) return 1;; esac; }
 
+# is_templated — true for the three payload files that carry {{PROJECT_NAME}}.
+# An explicit allowlist rather than a blanket pass: a global substitution would
+# also rewrite the provenance mentions ("added by ai-infra") that must survive.
+is_templated() { case "$1" in CLAUDE.md|pyproject.toml|program.md) return 0;; *) return 1;; esac; }
+
+# render — write $1 to stdout with {{PROJECT_NAME}} resolved. $PROJECT_NAME is a
+# normalized slug ([a-z0-9-] only), so it needs no sed metacharacter escaping.
+# Two tokens, not one: pyproject.toml's `name` field is PEP 508-validated and
+# rejects braces, so uv refuses to parse a tree holding {{PROJECT_NAME}} there.
+# The sentinel is a legal package name; a surviving one is loudly wrong.
+render() { sed -e "s/{{PROJECT_NAME}}/$PROJECT_NAME/g" \
+               -e "s/project-name-placeholder/$PROJECT_NAME/g" "$1"; }
+
+# place — install one payload file, rendering it when templated. Mirrors the
+# `cp -p` it replaces, including its exit status, so callers are unchanged.
+place() {
+  if is_templated "$3"; then render "$1" > "$2"; else cp -p "$1" "$2"; fi
+}
+
 step "Installing $((${#FILES[@]})) file(s) into $TARGET"
 for rel in "${FILES[@]}"; do
   src="$SRC/$rel"; dst="$TARGET/$rel"
   if [ ! -e "$dst" ]; then
-    if mkdir -p "$(dirname "$dst")" && cp -p "$src" "$dst"; then INSTALLED+=("$rel"); else FAILED+=("$rel"); err "failed: $rel"; fi
+    if mkdir -p "$(dirname "$dst")" && place "$src" "$dst" "$rel"; then INSTALLED+=("$rel"); else FAILED+=("$rel"); err "failed: $rel"; fi
     continue
   fi
   # conflict
   case "$MODE" in
     override)
-      if cp -p "$dst" "$dst.$TS.bak" && cp -p "$src" "$dst"; then OVERWROTE+=("$rel"); else FAILED+=("$rel"); err "failed: $rel"; fi ;;
+      if cp -p "$dst" "$dst.$TS.bak" && place "$src" "$dst" "$rel"; then OVERWROTE+=("$rel"); else FAILED+=("$rel"); err "failed: $rel"; fi ;;
     append)
       if is_text "$rel"; then
-        { printf '\n'; case "$rel" in *.gitignore|*.gitattributes|.gitignore|.gitattributes) printf '# --- added by ai-infra ---\n';; *) printf '<!-- added by ai-infra -->\n';; esac; cat "$src"; } >> "$dst" \
+        { printf '\n'; case "$rel" in *.gitignore|*.gitattributes|.gitignore|.gitattributes) printf '# --- added by ai-infra ---\n';; *) printf '<!-- added by ai-infra -->\n';; esac; if is_templated "$rel"; then render "$src"; else cat "$src"; fi; } >> "$dst" \
           && APPENDED+=("$rel") || { FAILED+=("$rel"); err "failed: $rel"; }
       else
         KEPT+=("$rel")   # not text-appendable; left untouched

@@ -1,7 +1,7 @@
 # `.claude/` — project-scope Claude Code config (the only scope)
 
 Everything here is active when this repo is the open project in Claude Code.
-Nothing is installed to `~/.claude`; ai-infra never mutates your global setup.
+Nothing is installed to `~/.claude`; this setup never mutates your global config.
 
 - **`settings.json`** — the full project config: every hook (KB lifecycle +
   guardrail / pre-bash-guard / audit / notify / post-fetch-injection-scan / rtk
