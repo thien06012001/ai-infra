@@ -1,7 +1,7 @@
 [project]
-name = "ai-infra"
+name = "{{PROJECT_NAME}}"
 version = "0.1.0"
-description = "ai-infra — Claude harness + Personal Knowledge Base"
+description = "{{PROJECT_NAME}} — Claude harness + Personal Knowledge Base"
 requires-python = ">=3.12"
 dependencies = [
     "claude-agent-sdk>=0.1.29",
