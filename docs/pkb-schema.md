@@ -136,6 +136,17 @@ Each file follows this format:
 - [ ] Follow up on X
 ```
 
+#### The entry contract
+
+A daily log is only worth compiling if its entries are written to compound rather than accumulate. Four constraints do most of that work:
+
+- **Name the pattern, not the event.** "Installer step 5c fetches the binary" is a changelog line. "Declaring config is not installing it" is a lesson that transfers. If the title only makes sense to someone who was there, it will not survive compilation.
+- **Every lesson states its recognition signal.** A lesson you cannot recognize in time is not actionable. Write the observable that tells you the pattern is live, in the form *"Next time I see [signal], I will [action]."* Without it, the entry records that something happened but not how to catch it happening again.
+- **Record what did NOT work, and why.** Failed approaches with their exact error are the highest-value and most reliably lost content in any session — the next session will otherwise retry them from scratch. A claim only belongs in the "worked" column with evidence attached (a test passed, a command returned 0, output was inspected); without evidence it goes under "not tried yet," not under "worked."
+- **Merge, don't duplicate.** Before writing a lesson, check whether an existing entry or article shares its root cause. The same root cause showing a new symptom is an *update* to what exists, not a new entry. Duplicates are how a knowledge base becomes a diary.
+
+Calibration: roughly 4–8 sentences per lesson. Much shorter usually means the pattern was not actually identified; much longer usually means events are being narrated instead of distilled.
+
 ### Layer 2: `knowledge/` - Compiled Knowledge (LLM-Owned)
 
 The LLM owns this directory entirely. Humans read it but rarely edit it directly.
@@ -187,6 +198,25 @@ Append-only chronological record of every compile, query, and lint operation.
 ```
 
 ## Article Formats
+
+### Before creating an article: the admission gate
+
+The failure mode of a curated knowledge base is not missing articles — it is one article per insight, until nothing can be found and every lookup returns four overlapping half-answers. So creating a file is a decision that has to be argued for, not the default outcome of having learned something.
+
+Before writing a new article, check three things: does an existing article already cover this (search `knowledge/`, not just the index), would appending to that article serve the reader better than a new file, and is this reusable knowledge rather than a one-off incident?
+
+Then commit to one verdict:
+
+| Verdict | When | Result |
+|---------|------|--------|
+| **Save** | Reusable, and no existing article covers it | New article |
+| **Improve then save** | Reusable, but the framing is still muddy | Sharpen the claim first, then new article |
+| **Absorb into [X]** | An existing article is the natural home | Extend that article; no new file |
+| **Drop** | One-off, or already covered adequately | Daily log only |
+
+**"Absorb into [X]" should be the most common verdict**, and choosing it is a success rather than a failure. Prefer extending a strong article over spawning a weak sibling.
+
+Two corollaries. An incident is not a concept — a bug that happened once belongs in `daily/`, and earns an article when it recurs or when the underlying principle is named. And when two articles overlap materially, do not fork and do not delete: make one **canonical** and reduce the other to a pointer, so the shared content has exactly one home.
 
 ### Concept Articles (`knowledge/concepts/`)
 

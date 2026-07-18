@@ -43,6 +43,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from _profile_gate import check_enabled  # noqa: E402
+from _kb_edits import accumulator_path  # noqa: E402
 
 check_enabled("session-activity-tracker", min_profile="standard")
 
@@ -194,6 +195,43 @@ def _build_record(payload: dict) -> dict | None:
     return record
 
 
+def _accumulate_kb_edit(record: dict) -> None:
+    """Note a touched knowledge-base file for the Stop hook to drain.
+
+    Why accumulate instead of linting on every edit: the KB linter is a
+    whole-corpus structural pass, so running it per-edit would repeat the same
+    work many times inside one response. Recording the paths here and draining
+    once at Stop collapses that to a single run, and costs no extra process
+    spawn because this hook already parsed the payload.
+
+    The accumulator is session-scoped and lives in the system temp dir, not in
+    ``reports/`` — it is transient coordination state between two hooks, not an
+    artifact worth keeping or committing. ``stop-kb-lint.py`` unlinks it on
+    read, so a crashed session leaves at most one stale file that the OS
+    reclaims.
+
+    Args:
+        record: A built activity record. Only records whose ``file`` is a
+            markdown file under ``knowledge/`` or ``daily/`` are accumulated;
+            everything else is ignored.
+    """
+    path = record.get("file")
+    if not isinstance(path, str) or not path.endswith(".md"):
+        return
+    if not (path.startswith("knowledge/") or path.startswith("daily/")):
+        return
+    try:
+        with accumulator_path(record.get("session") or "unknown").open(
+            "a", encoding="utf-8"
+        ) as f:
+            # One path per line, append-only: concurrent hook processes can
+            # each append without a lock, which a read-modify-write would need.
+            f.write(path + "\n")
+    except OSError:
+        # Coordination is best-effort; a failure here must not affect the edit.
+        return
+
+
 def main() -> int:
     """Read stdin, build a record, append it to the JSONL log.
 
@@ -204,6 +242,8 @@ def main() -> int:
     record = _build_record(payload)
     if record is None:
         return 0
+
+    _accumulate_kb_edit(record)
 
     try:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)

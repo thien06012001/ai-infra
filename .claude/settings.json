@@ -104,7 +104,8 @@
       { "matcher": "", "hooks": [ { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/kb-auto-inject.py\"", "timeout": 5 } ] }
     ],
     "Stop": [
-      { "matcher": "", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/notify.sh\" --kind Done" } ] }
+      { "matcher": "", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/notify.sh\" --kind Done" } ] },
+      { "matcher": "", "hooks": [ { "type": "command", "command": "uv run --directory \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/hooks/stop-kb-lint.py\"" } ] }
     ],
     "Notification": [
       { "matcher": "permission_prompt|idle_prompt", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/notify.sh\" --kind Input" } ] }
