@@ -58,8 +58,9 @@ SRC="$WORK/src"; mkdir -p "$SRC"
 
 # Build the payload source from tracked files only, using working-tree content.
 # `find`-based enumeration would sweep in untracked local KB articles.
+# GNU tar treats -C as a no-op when it follows -T -, so -C must come first.
 git -C "$REPO_ROOT" ls-files -z \
-  | tar --null -T - -c -C "$REPO_ROOT" -f - \
+  | tar --null -C "$REPO_ROOT" -T - -c -f - \
   | tar -x -C "$SRC"
 
 PASS=0; FAIL=0
