@@ -39,8 +39,12 @@ TOOLS_OK=(); TOOLS_FAIL=(); WIRE_OK=(); WIRE_FAIL=()
 
 # Top-level paths that make up the infra payload (everything else in the repo —
 # README, SETUP, the installers, .git — is NOT installed into your project).
+# `docs/pkb-schema.md` rather than all of `docs`: docs/superpowers/{specs,plans}
+# are design records about building this template, not documentation the
+# installed project needs.
 PAYLOAD_PATHS=(CLAUDE.md program.md pyproject.toml uv.lock .mcp.json .gitignore
-  .gitattributes setup.sh .claude hooks scripts .githooks docs knowledge daily reports)
+  .gitattributes setup.sh .claude hooks scripts .githooks docs/pkb-schema.md
+  knowledge daily reports)
 
 say "${C_B}ai-infra installer${C_0}  ${C_D}($REPO@$REF → $TARGET)${C_0}"
 say ""

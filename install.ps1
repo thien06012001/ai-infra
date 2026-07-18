@@ -26,9 +26,12 @@ function Err($m) { Write-Host "  x $m" -ForegroundColor Red }
 $Installed=@(); $Overwrote=@(); $Appended=@(); $Skipped=@(); $Kept=@(); $Failed=@()
 $ToolsOk=@(); $ToolsFail=@(); $WireOk=@(); $WireFail=@()
 
+# 'docs/pkb-schema.md' rather than all of 'docs': docs/superpowers/{specs,plans}
+# are design records about building this template, not documentation the
+# installed project needs.
 $PayloadPaths = @('CLAUDE.md','program.md','pyproject.toml','uv.lock','.mcp.json',
   '.gitignore','.gitattributes','setup.sh','.claude','hooks','scripts','.githooks',
-  'docs','knowledge','daily','reports')
+  'docs/pkb-schema.md','knowledge','daily','reports')
 
 Write-Host "ai-infra installer ($Repo@$Ref -> $Target)" -ForegroundColor White
 Write-Host ""
