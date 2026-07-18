@@ -47,17 +47,17 @@ Write-Host ""
 # uppercase, and a directory called "My App" is a legitimate install target.
 # Returns an empty string when no valid character survives.
 function Get-NormalizedName($raw) {
-  $s = $raw.ToLower() -replace '[ _]', '-' -replace '[^a-z0-9-]', '' -replace '-{2,}', '-'
+  $s = $raw.ToLowerInvariant() -replace '[ _]', '-' -replace '[^a-z0-9-]', '' -replace '-{2,}', '-'
   return $s.Trim('-')
 }
 
 $RawName = $env:AI_INFRA_NAME
 if (-not $RawName) {
   $DefaultName = Split-Path $Target -Leaf
-  if ([Environment]::UserInteractive) {
-    $RawName = Read-Host "Project name? [$DefaultName]"
-    if (-not $RawName) { $RawName = $DefaultName }
-  } else {
+  if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    try { $RawName = Read-Host "Project name? [$DefaultName]" } catch { $RawName = $null }
+  }
+  if (-not $RawName) {
     $RawName = $DefaultName
     Warn "non-interactive session — project name defaulted to '$RawName'"
   }
@@ -68,7 +68,7 @@ if (-not $ProjectName) {
   Err "project name '$RawName' normalizes to empty — use letters, digits, or hyphens"
   exit 1
 }
-if ($ProjectName -ne $RawName) {
+if ($ProjectName -cne $RawName) {
   Write-Host "  using project name: $ProjectName (from ""$RawName"")"
 } else {
   Write-Host "  project name: $ProjectName"
@@ -205,14 +205,19 @@ try {
   # Test-Templated — true for the three payload files carrying {{PROJECT_NAME}}.
   # An explicit allowlist rather than a blanket pass: a global substitution would
   # also rewrite the provenance mentions ("added by ai-infra") that must survive.
-  function Test-Templated($rel){ @('CLAUDE.md','pyproject.toml','program.md') -contains ($rel -replace '\\','/') }
+  function Test-Templated($rel){ @('CLAUDE.md','pyproject.toml','program.md') -ccontains ($rel -replace '\\','/') }
 
   # Get-Rendered — return the file's content with {{PROJECT_NAME}} resolved.
-  function Get-Rendered($path){ (Get-Content $path -Raw).Replace('{{PROJECT_NAME}}', $ProjectName) }
+  # Reads/writes via the .NET API with an explicit BOM-less UTF-8 encoder,
+  # rather than Get-Content/Set-Content: those cmdlets decode/re-encode using
+  # the system ANSI codepage on Windows PowerShell 5.1, which corrupts the
+  # non-ASCII characters these payload files contain on non-Latin locales.
+  $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  function Get-Rendered($path){ [IO.File]::ReadAllText($path, $Utf8NoBom).Replace('{{PROJECT_NAME}}', $ProjectName) }
 
   # Copy-Payload — install one payload file, rendering it when templated.
   function Copy-Payload($s, $d, $rel) {
-    if (Test-Templated $rel) { Set-Content -Path $d -Value (Get-Rendered $s) -NoNewline }
+    if (Test-Templated $rel) { [IO.File]::WriteAllText($d, (Get-Rendered $s), $Utf8NoBom) }
     else { Copy-Item $s $d -Force }
   }
 
