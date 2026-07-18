@@ -68,6 +68,11 @@ audit_append() {
   size=$(stat -c %s "$log" 2>/dev/null || echo 0)
   if [ "$size" -gt "$AUDIT_MAX_BYTES" ] 2>/dev/null; then
     mv -f "$log" "$log.1" 2>/dev/null || true
+    # `mv` preserves the old file's mode, so a log that predates mode-600
+    # creation stays world-readable under its new name. Rotation must reduce
+    # exposure, not relocate it — this was found the hard way when the first
+    # rotation moved 6.18 MB of unredacted history into a 644 archive.
+    chmod 600 "$log.1" 2>/dev/null || true
     install -m 600 /dev/null "$log" 2>/dev/null || { : >"$log"; chmod 600 "$log"; }
   fi
   printf '%s\n' "$line" | redact >>"$log"
