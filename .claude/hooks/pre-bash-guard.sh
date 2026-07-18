@@ -6,19 +6,20 @@
 # Logs every invocation to ~/.claude/hooks/audit.log regardless.
 
 set -euo pipefail
+# shellcheck source=redact.sh
+. "$(dirname "${BASH_SOURCE[0]}")/redact.sh"
 
 LOG=~/.claude/hooks/audit.log
-mkdir -p "$(dirname "$LOG")"
 
 INPUT=$(cat)
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 
 ts=$(date -Iseconds)
-echo "$ts BASH $CMD" >> "$LOG"
+audit_append "$LOG" "$ts BASH $CMD"
 
 block() {
   echo "BLOCKED by pre-bash-guard.sh: $1" >&2
-  echo "$ts BLOCK ($1): $CMD" >> "$LOG"
+  audit_append "$LOG" "$ts BLOCK ($1): $CMD"
   exit 2
 }
 
