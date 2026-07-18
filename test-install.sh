@@ -69,14 +69,17 @@ for f in CLAUDE.md pyproject.toml program.md; do
 done
 
 # --- residual ai-infra mentions are exactly the expected provenance set ---
-# hooks/_kb_edits.py keeps an internal temp-file namespace by design.
-# uv.lock still names the old root package until `uv sync` re-locks it.
+# hooks/_kb_edits.py keeps an internal temp-file namespace by design, and is the
+# only file expected to still say ai-infra. uv.lock is NOT in this set: the
+# installer's own wiring step (install.sh, `uv --directory "$TARGET" sync`) runs
+# before the installer returns, so the lock has already been regenerated against
+# the rendered pyproject.toml by the time this check executes.
 # The installer's wiring step runs `uv sync` and scripts/index.py before returning,
 # so .venv/ and the binary search index exist by now; neither is installed content,
 # so -I (skip binaries) and --exclude-dir=.venv keep them out of the comparison.
 echo "-- files still containing 'ai-infra': --"
 ( cd "$T" && grep -rlI --exclude-dir=.venv 'ai-infra' . 2>/dev/null | sed 's|^\./||' | sort | tee "$WORK/residual.txt" )
-printf 'hooks/_kb_edits.py\nuv.lock\n' | sort > "$WORK/expected.txt"
+printf 'hooks/_kb_edits.py\n' | sort > "$WORK/expected.txt"
 assert "residual ai-infra mentions match the expected set" \
   diff -q "$WORK/expected.txt" "$WORK/residual.txt"
 
