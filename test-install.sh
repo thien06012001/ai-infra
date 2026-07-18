@@ -63,6 +63,12 @@ assert "docs/pkb-schema.md IS installed"          test -f "$T/docs/pkb-schema.md
 refute "no '{{' remains anywhere in the target"   grep -rqI --exclude-dir=.venv '{{' "$T"
 refute "no 'project-name-placeholder' remains either"     grep -rqI --exclude-dir=.venv 'project-name-placeholder' "$T"
 
+# The token assertions above are necessary but not sufficient. Prose that TALKS
+# about the template renders cleanly and passes them while still telling the
+# user's project it is a template. An installed project must never refer to the
+# upstream repo at all.
+refute "no template self-reference leaked"        grep -rqiI --exclude-dir=.venv 'upstream template\|template repo' "$T"
+
 # --- the three templated files carry the project name, not the template's ---
 for f in CLAUDE.md pyproject.toml program.md; do
   refute "$f does not mention ai-infra"           grep -q 'ai-infra' "$T/$f"

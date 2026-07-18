@@ -168,7 +168,5 @@ delete the `_implemented.md` and run the trigger phrase again.
 
 ## Related
 
-- Spec: [`docs/superpowers/specs/2026-05-23-best-practices-scanner-design.md`](../../../docs/superpowers/specs/2026-05-23-best-practices-scanner-design.md)
-- Plan: [`docs/superpowers/plans/2026-05-23-best-practices-scanner.md`](../../../docs/superpowers/plans/2026-05-23-best-practices-scanner.md)
 - Source folder: [`knowledge/best-practices/`](../../../knowledge/best-practices/)
 - Report output: [`reports/best-practices/`](../../../reports/best-practices/)

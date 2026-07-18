@@ -318,7 +318,7 @@ def check_probe_recall() -> list[dict]:
             "detail": (
                 f"Hit rate {hit_rate:.0%} is below the {PROBE_HIT_RATE_THRESHOLD:.0%} "
                 f"phase-2 trigger — consider adding MiniLM embeddings (see "
-                f"docs/superpowers/specs/2026-05-17-kb-auto-search-design.md §7)"
+                f"docs/pkb-schema.md §7)"
             ),
         })
 

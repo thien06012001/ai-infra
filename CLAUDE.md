@@ -175,8 +175,6 @@ Then pick one verdict explicitly: **Append** to an existing rule / **Revise** an
 
 This project is `{{PROJECT_NAME}}`. Read this section, then any local instructions, before making changes. If the request is ambiguous about scope, ask before acting.
 
-> `{{PROJECT_NAME}}` is substituted with the real project name at install time. If you are reading this token unrendered, you are in the upstream template repository itself, not an installed project.
-
 When you orient yourself, **check the knowledge base first** — it has three layers, and each owns exactly one class of question:
 
 - **Narrative (`knowledge/`)** — *why did we decide X?* Rationale, conventions, decisions. Start at `knowledge/index.md`.

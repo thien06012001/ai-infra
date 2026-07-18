@@ -71,7 +71,11 @@ normalize_name() {
 RAW_NAME="${AI_INFRA_NAME:-}"
 if [ -z "$RAW_NAME" ]; then
   DEFAULT_NAME="$(basename "$TARGET")"
-  if [ -r /dev/tty ]; then
+  # `[ -r /dev/tty ]` alone is not a TTY test: in a container or CI with no
+  # controlling terminal the node exists and passes -r, but opening it fails
+  # ENXIO — printing two raw bash errors and skipping the warn branch. Actually
+  # opening it is the only reliable check.
+  if [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
     printf 'Project name? [%s]: ' "$DEFAULT_NAME" > /dev/tty
     read -r RAW_NAME < /dev/tty || RAW_NAME=""
     [ -n "$RAW_NAME" ] || RAW_NAME="$DEFAULT_NAME"
