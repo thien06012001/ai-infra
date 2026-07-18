@@ -6,7 +6,8 @@
 # directory, then installs the external CLI tools (graphify, codegraph, rtk). Reports exactly
 # what was installed, overwritten, appended, skipped, or failed.
 #
-# Env overrides: $env:AI_INFRA_TARGET, $env:AI_INFRA_MODE (override|append|skip),
+# Env overrides: $env:AI_INFRA_NAME (project name; default: ask, else target dir name),
+#   $env:AI_INFRA_TARGET, $env:AI_INFRA_MODE (override|append|skip),
 #   $env:AI_INFRA_REF, $env:AI_INFRA_SRC (local payload dir), $env:AI_INFRA_SKIP_TOOLS=1,
 #   $env:AI_INFRA_SKIP_PLUGINS=1 (skip installing the declared Claude plugins),
 #   $env:AI_INFRA_SKIP_PREREQS=1 (skip auto-installing git, jq, node, uv),
@@ -34,6 +35,44 @@ $PayloadPaths = @('CLAUDE.md','program.md','pyproject.toml','uv.lock','.mcp.json
   'docs/pkb-schema.md','knowledge','daily','reports')
 
 Write-Host "ai-infra installer ($Repo@$Ref -> $Target)" -ForegroundColor White
+Write-Host ""
+
+# ---------- 0a. project name ----------
+# The payload carries the template's own identity in three files. Capture the
+# name the user wants this project to have and render it during the copy, so an
+# installed project never claims to be ai-infra.
+
+# Get-NormalizedName — fold an arbitrary human name into a PEP 508-safe slug.
+# Required, not cosmetic: pyproject.toml's `name` field rejects spaces and
+# uppercase, and a directory called "My App" is a legitimate install target.
+# Returns an empty string when no valid character survives.
+function Get-NormalizedName($raw) {
+  $s = $raw.ToLower() -replace '[ _]', '-' -replace '[^a-z0-9-]', '' -replace '-{2,}', '-'
+  return $s.Trim('-')
+}
+
+$RawName = $env:AI_INFRA_NAME
+if (-not $RawName) {
+  $DefaultName = Split-Path $Target -Leaf
+  if ([Environment]::UserInteractive) {
+    $RawName = Read-Host "Project name? [$DefaultName]"
+    if (-not $RawName) { $RawName = $DefaultName }
+  } else {
+    $RawName = $DefaultName
+    Warn "non-interactive session — project name defaulted to '$RawName'"
+  }
+}
+
+$ProjectName = Get-NormalizedName $RawName
+if (-not $ProjectName) {
+  Err "project name '$RawName' normalizes to empty — use letters, digits, or hyphens"
+  exit 1
+}
+if ($ProjectName -ne $RawName) {
+  Write-Host "  using project name: $ProjectName (from ""$RawName"")"
+} else {
+  Write-Host "  project name: $ProjectName"
+}
 Write-Host ""
 
 # ---------- 0. prerequisite preflight (auto-install when missing) ----------
@@ -163,20 +202,35 @@ try {
   $ts = Get-Date -Format 'yyyyMMdd-HHmmss'
   function Is-Text($rel){ $rel -match '\.(md|txt)$' -or $rel -match '(^|[\\/])\.gitignore$' -or $rel -match '(^|[\\/])\.gitattributes$' }
 
+  # Test-Templated — true for the three payload files carrying {{PROJECT_NAME}}.
+  # An explicit allowlist rather than a blanket pass: a global substitution would
+  # also rewrite the provenance mentions ("added by ai-infra") that must survive.
+  function Test-Templated($rel){ @('CLAUDE.md','pyproject.toml','program.md') -contains ($rel -replace '\\','/') }
+
+  # Get-Rendered — return the file's content with {{PROJECT_NAME}} resolved.
+  function Get-Rendered($path){ (Get-Content $path -Raw).Replace('{{PROJECT_NAME}}', $ProjectName) }
+
+  # Copy-Payload — install one payload file, rendering it when templated.
+  function Copy-Payload($s, $d, $rel) {
+    if (Test-Templated $rel) { Set-Content -Path $d -Value (Get-Rendered $s) -NoNewline }
+    else { Copy-Item $s $d -Force }
+  }
+
   Step "Installing $($files.Count) file(s) into $Target"
   foreach ($rel in $files) {
     $s = Join-Path $Src $rel; $d = Join-Path $Target $rel
     try {
       if (-not (Test-Path $d)) {
         New-Item -ItemType Directory -Force -Path (Split-Path $d -Parent) | Out-Null
-        Copy-Item $s $d -Force; $Installed += $rel; continue
+        Copy-Payload $s $d $rel; $Installed += $rel; continue
       }
       switch ($Mode) {
-        'override' { Copy-Item $d "$d.$ts.bak" -Force; Copy-Item $s $d -Force; $Overwrote += $rel }
+        'override' { Copy-Item $d "$d.$ts.bak" -Force; Copy-Payload $s $d $rel; $Overwrote += $rel }
         'append'   {
           if (Is-Text $rel) {
             $sep = if ($rel -match '\.(gitignore|gitattributes)$') { "`n# --- added by ai-infra ---`n" } else { "`n<!-- added by ai-infra -->`n" }
-            Add-Content -Path $d -Value ($sep + (Get-Content $s -Raw)); $Appended += $rel
+            $body = if (Test-Templated $rel) { Get-Rendered $s } else { Get-Content $s -Raw }
+            Add-Content -Path $d -Value ($sep + $body); $Appended += $rel
           } else { $Kept += $rel }
         }
         'skip'     { $Skipped += $rel }
