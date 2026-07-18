@@ -17,6 +17,10 @@ $ErrorActionPreference = 'Stop'
 $Repo   = 'thien06012001/ai-infra'
 $Ref    = if ($env:AI_INFRA_REF)    { $env:AI_INFRA_REF }    else { 'main' }
 $Target = if ($env:AI_INFRA_TARGET) { $env:AI_INFRA_TARGET } else { (Get-Location).Path }
+# Cmdlets resolve relative paths against $PWD, but [IO.File] resolves against
+# [Environment]::CurrentDirectory, which PowerShell never syncs. Absolutize once
+# so both agree for the rest of the run.
+$Target = [IO.Path]::GetFullPath((Join-Path (Get-Location).ProviderPath $Target))
 $Mode   = $env:AI_INFRA_MODE
 
 function Step($m){ Write-Host "==> $m" -ForegroundColor Cyan }
@@ -54,12 +58,17 @@ function Get-NormalizedName($raw) {
 $RawName = $env:AI_INFRA_NAME
 if (-not $RawName) {
   $DefaultName = Split-Path $Target -Leaf
+  # Track whether we actually attempted the prompt: an interactive user who
+  # presses Enter to accept the default also lands in "-not $RawName" below,
+  # and that case must not be reported as "non-interactive".
+  $Prompted = $false
   if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    $Prompted = $true
     try { $RawName = Read-Host "Project name? [$DefaultName]" } catch { $RawName = $null }
   }
   if (-not $RawName) {
     $RawName = $DefaultName
-    Warn "non-interactive session — project name defaulted to '$RawName'"
+    if (-not $Prompted) { Warn "non-interactive session — project name defaulted to '$RawName'" }
   }
 }
 
@@ -156,6 +165,9 @@ try {
     $Src = $env:AI_INFRA_SRC
     Step "Using local payload: $Src"
     if (-not (Test-Path $Src -PathType Container)) { Err "AI_INFRA_SRC '$Src' is not a directory"; exit 1 }
+    # Same $PWD vs [Environment]::CurrentDirectory divergence as $Target above:
+    # absolutize now that we know the path exists, so [IO.File] calls below agree.
+    $Src = (Resolve-Path -LiteralPath $Src).ProviderPath
   } else {
     Step "Downloading ai-infra ($Ref)"
     $Tmp = Join-Path ([IO.Path]::GetTempPath()) ("ai-infra-" + [Guid]::NewGuid().ToString('N'))
@@ -240,8 +252,12 @@ try {
         'append'   {
           if (Is-Text $rel) {
             $sep = if ($rel -match '\.(gitignore|gitattributes)$') { "`n# --- added by ai-infra ---`n" } else { "`n<!-- added by ai-infra -->`n" }
-            $body = if (Test-Templated $rel) { Get-Rendered $s } else { Get-Content $s -Raw }
-            Add-Content -Path $d -Value ($sep + $body); $Appended += $rel
+            # Both read and write go through the .NET UTF-8 API here, not
+            # Get-Content/Add-Content: Add-Content encodes with the system ANSI
+            # codepage on Windows PowerShell 5.1, which silently mangles any
+            # non-Latin character (e.g. U+2192) that ReadAllText correctly decoded.
+            $body = if (Test-Templated $rel) { Get-Rendered $s } else { [IO.File]::ReadAllText($s, $Utf8NoBom) }
+            [IO.File]::AppendAllText($d, ($sep + $body), $Utf8NoBom); $Appended += $rel
           } else { $Kept += $rel }
         }
         'skip'     { $Skipped += $rel }
