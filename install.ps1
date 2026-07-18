@@ -19,8 +19,14 @@ $Ref    = if ($env:AI_INFRA_REF)    { $env:AI_INFRA_REF }    else { 'main' }
 $Target = if ($env:AI_INFRA_TARGET) { $env:AI_INFRA_TARGET } else { (Get-Location).Path }
 # Cmdlets resolve relative paths against $PWD, but [IO.File] resolves against
 # [Environment]::CurrentDirectory, which PowerShell never syncs. Absolutize once
-# so both agree for the rest of the run.
-$Target = [IO.Path]::GetFullPath((Join-Path (Get-Location).ProviderPath $Target))
+# so both agree for the rest of the run. The IsPathRooted guard is load-bearing:
+# Join-Path does not detect an already-absolute second argument, so joining
+# unconditionally turns an absolute target into $PWD + target and installs the
+# whole payload into the wrong directory.
+if (-not [IO.Path]::IsPathRooted($Target)) {
+  $Target = Join-Path (Get-Location).ProviderPath $Target
+}
+$Target = [IO.Path]::GetFullPath($Target)
 $Mode   = $env:AI_INFRA_MODE
 
 function Step($m){ Write-Host "==> $m" -ForegroundColor Cyan }
