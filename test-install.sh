@@ -13,11 +13,18 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 SRC="$WORK/src"; mkdir -p "$SRC"
 
-# Build the payload source from tracked files only, using working-tree content.
-# `find`-based enumeration would sweep in untracked local KB articles.
+# Build the payload source from tracked files only, using working-tree content, so
+# in-progress installer edits are exercised. `find`-based enumeration would sweep in
+# untracked local KB articles. GNU tar treats -C as a no-op after -T -, hence the order.
 git -C "$REPO_ROOT" ls-files -z \
   | tar --null -C "$REPO_ROOT" -T - -c -f - \
   | tar -x -C "$SRC"
+
+# ...except knowledge/ and daily/, which hold the operator's personal KB content in
+# this working tree. That content never reaches a user — the published tarball carries
+# only committed files — so taking the working-tree form here would test a state no
+# user can install. Overwrite those two trees with their committed form.
+git -C "$REPO_ROOT" archive HEAD knowledge daily | tar -x -C "$SRC" --overwrite
 
 PASS=0; FAIL=0
 ok_()   { printf '  PASS  %s\n' "$1"; PASS=$((PASS+1)); }
@@ -50,7 +57,10 @@ refute "docs/superpowers/ is NOT installed"      test -d "$T/docs/superpowers"
 assert "docs/pkb-schema.md IS installed"          test -f "$T/docs/pkb-schema.md"
 
 # --- no unrendered placeholder escaped ---
-refute "no '{{' remains anywhere in the target"   grep -rq '{{' "$T"
+# Scoped past .venv for the same reason as the residual check below: the venv is
+# dependency content, not installed payload, and a future dependency shipping a
+# template file would fail this assertion for a reason unrelated to the installer.
+refute "no '{{' remains anywhere in the target"   grep -rqI --exclude-dir=.venv '{{' "$T"
 
 # --- the three templated files carry the project name, not the template's ---
 for f in CLAUDE.md pyproject.toml program.md; do
@@ -61,8 +71,11 @@ done
 # --- residual ai-infra mentions are exactly the expected provenance set ---
 # hooks/_kb_edits.py keeps an internal temp-file namespace by design.
 # uv.lock still names the old root package until `uv sync` re-locks it.
+# The installer's wiring step runs `uv sync` and scripts/index.py before returning,
+# so .venv/ and the binary search index exist by now; neither is installed content,
+# so -I (skip binaries) and --exclude-dir=.venv keep them out of the comparison.
 echo "-- files still containing 'ai-infra': --"
-( cd "$T" && grep -rl 'ai-infra' . 2>/dev/null | sed 's|^\./||' | sort | tee "$WORK/residual.txt" )
+( cd "$T" && grep -rlI --exclude-dir=.venv 'ai-infra' . 2>/dev/null | sed 's|^\./||' | sort | tee "$WORK/residual.txt" )
 printf 'hooks/_kb_edits.py\nuv.lock\n' | sort > "$WORK/expected.txt"
 assert "residual ai-infra mentions match the expected set" \
   diff -q "$WORK/expected.txt" "$WORK/residual.txt"
