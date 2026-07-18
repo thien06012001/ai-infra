@@ -48,6 +48,18 @@ opt out of the auto-install. If you'd rather understand and run each step
 yourself, follow the **step-by-step** guide below — it does exactly what the
 one-liner does, one command at a time.
 
+The installer also asks what to call the project, defaulting to the target
+directory's name. Your answer is normalized to a lowercase slug and written into
+`CLAUDE.md`, `pyproject.toml`, and `program.md`, so the installed project carries
+your name rather than `ai-infra`. Set `AI_INFRA_NAME` to skip the prompt:
+
+```bash
+AI_INFRA_NAME=my-app curl -fsSL https://raw.githubusercontent.com/thien06012001/ai-infra/main/install.sh | bash
+```
+
+With no terminal available — a CI run, for instance — the target directory's name
+is used and the choice is reported in the log.
+
 ---
 
 ## Step-by-step install (one by one)
@@ -63,6 +75,9 @@ Pick the scenario that matches what you're doing:
 git clone https://github.com/thien06012001/ai-infra.git ai-infra
 cd ai-infra
 ```
+Working on the template itself, you will see `{{PROJECT_NAME}}` unrendered in
+`CLAUDE.md`, `pyproject.toml`, and `program.md` — that is correct; the token is
+substituted only when the installer copies the payload into a target project.
 
 **B. Add ai-infra to an existing project** — run the installer from that project's
 root (it downloads the payload and copies it in):
@@ -71,8 +86,10 @@ cd /path/to/your/project
 curl -fsSL https://raw.githubusercontent.com/thien06012001/ai-infra/main/install.sh | bash
 ```
 If files already exist, the installer **asks how to handle them** (see
-[Conflict handling](#conflict-handling)). Scenario B already performs Steps 2–5
-for you — skip ahead to [Step 6](#step-6--open-the-project-in-claude-code).
+[Conflict handling](#conflict-handling)). It also asks what to name the project,
+defaulting to the directory's name; set `AI_INFRA_NAME` to answer up front.
+Scenario B already performs Steps 2–5 for you — skip ahead to
+[Step 6](#step-6--open-the-project-in-claude-code).
 
 > The rest of the steps below are the wiring `setup.sh` runs. In scenario **A**
 > you can run `./setup.sh` to do Steps 2–5 in one shot, or run them by hand as

@@ -9,6 +9,10 @@ Wires the repo (project scope; does not touch `~/.claude` *settings*) and instal
 That's it. Everything else is configuration that Claude Code reads from
 `.claude/` when this repo is the open project.
 
+`setup.sh` does **not** substitute the project name. `{{PROJECT_NAME}}` stays
+literal in a clone of the template — only `install.sh` / `install.ps1` render it,
+when copying the payload into a target project. See the README.
+
 ## What `.claude/settings.json` wires (project scope)
 All hook commands are `$CLAUDE_PROJECT_DIR`-relative, so they only run for this
 repo — never globally:
