@@ -179,7 +179,7 @@ When you orient yourself, **check the knowledge base first** — it has three la
 
 - **Narrative (`knowledge/`)** — *why did we decide X?* Rationale, conventions, decisions. Start at `knowledge/index.md`.
 - **Atlas (`graphify-out/`)** — *what is this corpus about, what clusters with what?* God nodes, communities, cross-community bridges, surprising connections. Start at `graphify-out/GRAPH_REPORT.md` if it exists.
-- **Code index (codegraph MCP)** — *what calls this symbol, what breaks if I change it?* Exact call paths and blast radius, via the `codegraph_explore` MCP tool. Only exists in repos where `codegraph init` has been run — **not** in `ai-infra` itself, which has no call graph worth indexing.
+- **Code index (codegraph MCP)** — *what calls this symbol, what breaks if I change it?* Exact call paths and blast radius, via the `codegraph_explore` MCP tool. Only exists where `codegraph init` has been run — worth doing if this project contains real application code, and worth skipping if it is only hooks and scripts.
 
 Route by the question, not by habit: **why → narrative. Corpus shape → atlas. Symbol precision → code index.**
 
