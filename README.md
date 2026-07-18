@@ -75,9 +75,15 @@ Pick the scenario that matches what you're doing:
 git clone https://github.com/thien06012001/ai-infra.git ai-infra
 cd ai-infra
 ```
-Working on the template itself, you will see `{{PROJECT_NAME}}` unrendered in
-`CLAUDE.md`, `pyproject.toml`, and `program.md` — that is correct; the token is
-substituted only when the installer copies the payload into a target project.
+Working on the template itself, you will see these placeholders unrendered — that
+is correct, because they are substituted only when the installer copies the
+payload into a target project. There are two of them. `{{PROJECT_NAME}}` appears
+in `CLAUDE.md`, in `program.md`, and in `pyproject.toml`'s `description`. The
+`name` field in `pyproject.toml` instead reads `project-name-placeholder`, because
+`uv` validates that field against PEP 508 and rejects braces — a checkout holding
+`name = "{{PROJECT_NAME}}"` makes `uv sync` and `uv run` fail outright, which
+breaks every hook and script in the repo. Leave both tokens alone; the installer
+substitutes them together.
 
 **B. Add ai-infra to an existing project** — run the installer from that project's
 root (it downloads the payload and copies it in):
